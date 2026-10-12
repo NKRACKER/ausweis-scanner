@@ -18,6 +18,25 @@ sealed class CardItem
     public double Dpi = 300;
     public bool Excluded;
     public List<string> Warnings = new List<string>();
+    public ScanInfo? Scan;        // Gesamtscan, aus dem die Karte stammt (nur im Arbeitsspeicher)
+    public PointD[]? Corners;     // Lage im Gesamtscan
+}
+
+/// <summary>Ein Quadrat/Viereck im Gesamtscan. Item == null: Karte ist (noch) nicht in der Liste.</summary>
+sealed class ScanQuad
+{
+    public PointD[] Corners = new PointD[4];
+    public CardItem? Item;
+    public bool Include;          // nur im Scan-Dialog: soll in die Liste
+    public bool Manual;
+}
+
+/// <summary>Der volle Scan mit allen Rahmen – bleibt für die Ansicht „Gesamten Scan prüfen“ im Speicher, bis die Liste geleert wird.</summary>
+sealed class ScanInfo
+{
+    public Raster Image = null!;
+    public double Dpi = 300;
+    public List<ScanQuad> Quads = new List<ScanQuad>();
 }
 
 sealed class PipelineResult
@@ -25,6 +44,7 @@ sealed class PipelineResult
     public List<CardItem> Cards = new List<CardItem>();
     public List<string> Warnings = new List<string>();
     public string ProfileUsed = "";
+    public ScanInfo? Scan;
 }
 
 static class Pipeline
@@ -58,36 +78,54 @@ static class Pipeline
         bool auto = selected.Name == "Automatisch";
         var matcher = loc != null && auto ? new ProfileMatcher(loc, profiles) : null;
 
+        var info = new ScanInfo { Image = scan, Dpi = dpi };
+        res.Scan = info;
         int n = 0;
         foreach (var dc in det.Cards)
         {
             n++; progress?.Invoke($"Lese Ausweis {n} von {det.Cards.Count} …");
-            var card = CardExtractor.Extract(scan, dc);
-            var item = new CardItem { Dpi = dpi };
-            item.Warnings.AddRange(dc.Warnings);
-            if (loc != null)
-            {
-                try
-                {
-                    Profile used = selected;
-                    card = OrientationResolver.Resolve(card, selected.Orientation,
-                        c => matcher != null ? matcher.Locate(c, out used) : loc.Locate(c, selected),
-                        out var cands, out _);
-                    item.Candidates = cands; item.ProfileUsed = used.Name;
-                    if (cands.Count > 0)
-                    {
-                        var b = cands[0]; item.Last = b.Name.Last; item.First = b.Name.First; item.Score = b.Score; item.Source = b.Source;
-                    }
-                    if (item.Score < 0.7) item.Warnings.Add(cands.Count == 0 ? "Kein Name erkannt – bitte eintippen." : "Name unsicher – bitte prüfen.");
-                }
-                catch (Exception e) { item.Warnings.Add("Texterkennung fehlgeschlagen: " + e.Message); }
-            }
-            item.Image = card;
+            var item = ReadCard(info, dc, loc, matcher, selected);
             res.Cards.Add(item);
+            info.Quads.Add(new ScanQuad { Corners = dc.Corners, Item = item });
         }
         res.ProfileUsed = matcher?.LastUsed?.Name ?? selected.Name;
-        if (det.Cards.Count == 0) res.Warnings.Add("Keine Ausweise erkannt. Tipps: Karten mit Abstand (≥ 5 mm) zueinander und zum Rand auflegen, Deckel offen lassen oder eine dunkle Unterlage (z. B. schwarzes Papier) darüberlegen, Glasplatte sauber.");
+        if (det.Cards.Count == 0) res.Warnings.Add("Keine Ausweise erkannt. Tipps: Karten mit Abstand (≥ 5 mm) zueinander und zum Rand auflegen, Deckel offen lassen oder eine dunkle Unterlage (z. B. schwarzes Papier) darüberlegen, Glasplatte sauber. Oder den Ausweis im Scan selbst markieren.");
         return res;
+    }
+
+    /// <summary>Eine Karte ausschneiden und (falls Texterkennung da ist) den Namen suchen.</summary>
+    static CardItem ReadCard(ScanInfo scan, DetectedCard dc, NameLocator? loc, ProfileMatcher? matcher, Profile selected)
+    {
+        var card = CardExtractor.Extract(scan.Image, dc);
+        var item = new CardItem { Dpi = scan.Dpi, Scan = scan, Corners = dc.Corners };
+        item.Warnings.AddRange(dc.Warnings);
+        if (loc != null)
+        {
+            try
+            {
+                Profile used = selected;
+                card = OrientationResolver.Resolve(card, selected.Orientation,
+                    c => matcher != null ? matcher.Locate(c, out used) : loc.Locate(c, selected),
+                    out var cands, out _);
+                item.Candidates = cands; item.ProfileUsed = used.Name;
+                if (cands.Count > 0)
+                {
+                    var b = cands[0]; item.Last = b.Name.Last; item.First = b.Name.First; item.Score = b.Score; item.Source = b.Source;
+                }
+                if (item.Score < 0.7) item.Warnings.Add(cands.Count == 0 ? "Kein Name erkannt – bitte eintippen." : "Name unsicher – bitte prüfen.");
+            }
+            catch (Exception e) { item.Warnings.Add("Texterkennung fehlgeschlagen: " + e.Message); }
+        }
+        item.Image = card;
+        return item;
+    }
+
+    /// <summary>Von Hand markierte Karte (vier Ecken im Gesamtscan) ausschneiden und lesen.</summary>
+    public static CardItem FromCorners(ScanInfo scan, PointD[] corners, IList<Profile> profiles, Profile selected, IOcrEngine? ocr)
+    {
+        var loc = ocr != null ? new NameLocator(ocr) : null;
+        var matcher = loc != null && selected.Name == "Automatisch" ? new ProfileMatcher(loc, profiles) : null;
+        return ReadCard(scan, QuadTools.ToCard(corners, scan.Dpi), loc, matcher, selected);
     }
 }
 

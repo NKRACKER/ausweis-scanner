@@ -36,7 +36,7 @@ sealed class MainForm : Form
     // Liste
     readonly Panel _list = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Visible = false };
     readonly Label _summary = new Label { Font = Theme.Font(12f, true), ForeColor = Theme.Text, AutoSize = true, Location = new Point(24, 16), BackColor = Color.Transparent };
-    readonly Button _addScan = Theme.Outline("＋  Weiterer Scan", 160, 34), _clear = Theme.Ghost("Liste leeren", 110, 34);
+    readonly Button _addScan = Theme.Outline("＋  Weiterer Scan", 160, 34), _clear = Theme.Ghost("Liste leeren", 110, 34), _viewScan = Theme.Outline("Gesamten Scan ansehen", 200, 34);
     readonly FlowLayoutPanel _flow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Bg, Padding = new Padding(14, 4, 14, 14) };
     // Fußleiste
     readonly Panel _bar = new Panel { Dock = DockStyle.Bottom, Height = 72, BackColor = Theme.Surface, Visible = false };
@@ -102,8 +102,8 @@ sealed class MainForm : Form
 
         // Liste
         var strip = new Panel { Dock = DockStyle.Top, Height = 58, BackColor = Theme.Bg };
-        var sr = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 340, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 12, 20, 0), BackColor = Color.Transparent };
-        sr.Controls.Add(_addScan); sr.Controls.Add(_clear);
+        var sr = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 560, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 12, 20, 0), BackColor = Color.Transparent };
+        sr.Controls.Add(_addScan); sr.Controls.Add(_clear); sr.Controls.Add(_viewScan);
         strip.Controls.Add(sr); strip.Controls.Add(_summary);
         _list.Controls.Add(_flow); _list.Controls.Add(strip);
 
@@ -121,6 +121,7 @@ sealed class MainForm : Form
     {
         _scan.Click += async (_, __) => await DoScan();
         _addScan.Click += async (_, __) => await DoScan();
+        _viewScan.Click += async (_, __) => await ShowScanView();
         _open.Click += async (_, __) =>
         {
             using var d = new OpenFileDialog { Multiselect = true, Title = "Scan(s) öffnen", Filter = "Bilder und PDF|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.pdf|Alle Dateien|*.*" };
@@ -155,7 +156,7 @@ sealed class MainForm : Form
     void SetBusy(bool busy, string? msg = null)
     {
         _busy = busy;
-        foreach (var c in new Control[] { _scan, _addScan, _open, _settingsBtn, _save, _clear, _changeFolder }) c.Enabled = !busy;
+        foreach (var c in new Control[] { _scan, _addScan, _viewScan, _open, _settingsBtn, _save, _clear, _changeFolder }) c.Enabled = !busy;
         UseWaitCursor = busy; if (msg != null) Status(msg);
     }
 
@@ -320,6 +321,45 @@ sealed class MainForm : Form
         Status(res.Cards.Count == 0 ? "Keine Ausweise erkannt." : "");
         var first = _cards.Where(c => c.Item.Score < 0.7).FirstOrDefault() ?? _cards.FirstOrDefault();
         first?.FocusLast();
+        // Nichts erkannt: gleich den ganzen Scan zeigen, damit die Ausweise per Rahmen markiert werden können
+        if (res.Cards.Count == 0 && res.Scan != null && _uiTestOut == null) await OpenScanView(res.Scan, "Es wurde kein Ausweis automatisch erkannt – bitte per Rahmen markieren.");
+    }
+
+    // ------------------------------------------------------------------ Gesamter Scan
+    async Task ShowScanView()
+    {
+        var scans = _cards.Select(c => c.Item.Scan).Where(x => x != null).Distinct().Cast<ScanInfo>().ToList();
+        if (scans.Count == 0) return;
+        if (scans.Count == 1) { await OpenScanView(scans[0], null); return; }
+        var m = new ContextMenuStrip { Font = Theme.Font(9.5f) };
+        for (int i = 0; i < scans.Count; i++) { var sc = scans[i]; m.Items.Add($"Scan {i + 1}  ({_cards.Count(c => c.Item.Scan == sc)} Ausweise)", null, async (_, __) => await OpenScanView(sc, null)); }
+        m.Show(_viewScan, new Point(0, _viewScan.Height));
+    }
+
+    async Task OpenScanView(ScanInfo scan, string? note)
+    {
+        if (_busy) return;
+        using var f = new ScanViewForm(scan, note);
+        if (f.ShowDialog(this) != DialogResult.OK) { UpdateView(); return; }
+        scan.Quads = f.Result;
+        foreach (var q in scan.Quads.Where(q => !q.Include && q.Item != null).ToList())
+        { var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null; }
+        var add = scan.Quads.Where(q => q.Include && q.Item == null).ToList();
+        if (add.Count > 0)
+        {
+            SetBusy(true, "Lese Ausweise …");
+            try
+            {
+                var profile = SelectedProfile; var ocr = _ocr; var profs = Profiles;
+                var items = await Task.Run(() => add.Select(q => Pipeline.FromCorners(scan, q.Corners, profs, profile, ocr)).ToList());
+                for (int i = 0; i < add.Count; i++) add[i].Item = items[i];
+                AddCards(items);
+                (_cards.FirstOrDefault(c => items.Contains(c.Item) && c.Item.Score < 0.7) ?? _cards.FirstOrDefault(c => items.Contains(c.Item)))?.FocusLast();
+            }
+            catch (Exception e) { MessageBox.Show("Auswertung fehlgeschlagen:\n" + e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            finally { SetBusy(false); Status(""); }
+        }
+        UpdateView();
     }
 
     // ------------------------------------------------------------------ Karten
@@ -338,7 +378,11 @@ sealed class MainForm : Form
         _flow.ResumeLayout(); Renumber(); MarkDuplicates(); UpdateView();
     }
 
-    void RemoveCard(CardControl c) { _cards.Remove(c); _flow.Controls.Remove(c); c.Dispose(); Renumber(); MarkDuplicates(); UpdateView(); }
+    void RemoveCard(CardControl c)
+    {
+        if (c.Item.Scan != null) foreach (var q in c.Item.Scan.Quads) if (q.Item == c.Item) q.Item = null;   // im Gesamtscan wieder „nicht ausgewählt“
+        _cards.Remove(c); _flow.Controls.Remove(c); c.Dispose(); Renumber(); MarkDuplicates(); UpdateView();
+    }
 
     void ClearCards() { foreach (var c in _cards) { _flow.Controls.Remove(c); c.Dispose(); } _cards.Clear(); Notice("", false); Status(""); UpdateView(); }
 
@@ -458,6 +502,12 @@ sealed class MainForm : Form
             using var ed = new ProfileEditor(_cards[0].Item.Image, _ocr, prof) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
             ed.Show(); await Task.Delay(500); Application.DoEvents();
             Snap(ed, baseName + "-editor.png");
+        }
+        if (_cards.Count > 0 && _cards[0].Item.Scan != null)
+        {
+            using var sv = new ScanViewForm(_cards[0].Item.Scan!, null) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
+            sv.Show(); await Task.Delay(500); Application.DoEvents();
+            Snap(sv, baseName + "-scanview.png");
         }
         using var st = new SettingsForm(this, 0) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
         st.Show();

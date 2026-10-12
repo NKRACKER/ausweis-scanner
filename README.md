@@ -20,6 +20,8 @@ der Name per Texterkennung vorgeschlagen (du bestätigst) und als eigene Datei *
 
 Mit „＋ Weiterer Scan“ lassen sich mehrere Scans sammeln und gemeinsam speichern.
 
+**Gesamten Scan prüfen:** Über „Gesamten Scan ansehen“ erscheint der komplette Scan mit allen erkannten Rahmen (grün, nummeriert). Ein Klick auf einen Ausweis nimmt ihn heraus (grau, ✕) bzw. wieder hinein. Wurde ein Ausweis nicht erkannt, zieht man mit der Maus einen Rahmen darum; liegt er schräg, setzt man den Haken „Ausweis liegt schräg“ und klickt seine vier Ecken an. Mit „Übernehmen“ werden die neuen Ausweise ausgeschnitten und der Name gelesen. Wird gar nichts erkannt, öffnet sich diese Ansicht automatisch. Der Scan bleibt dafür nur im Arbeitsspeicher, bis die Liste geleert oder gespeichert ist.
+
 **Alles Weitere liegt unter „Einstellungen“** (Tabs): *Allgemein* (Ordner, Format, Dateiname), *Scanner* (Gerät, Auflösung, Hersteller-Dialog, Netzwerk), *Ausweis-Design* (aktives Design, neues anlernen, löschen), *Erweitert* (JPEG-Qualität, Randabzug, Ordnerüberwachung), *Diagnose*.
 
 ## Scanner-Anbindung (wird automatisch kombiniert, du wählst nur das Gerät)
