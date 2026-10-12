@@ -71,39 +71,6 @@ jobs:
             if (-not $d.StartsWith('ok')) { throw "Update-Download fehlgeschlagen: $d" }
           }
 
-      - name: Deutsches OCR-Sprachpaket installieren (best effort)
-        if: ${{ !contains(github.event.head_commit.message, '[quick]') }}
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          $cap = Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.OCR*de-DE*' }
-          $cap | Format-Table Name, State
-          if ($cap.State -ne 'Installed') { Add-WindowsCapability -Online -Name $cap.Name | Out-String }
-          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--selftest','--report','selftest-after.txt'
-          Get-Content selftest-after.txt
-
-      - name: End-zu-End mit synthetischen Scans (echte Windows-OCR)
-        if: ${{ !contains(github.event.head_commit.message, '[quick]') }}
-        shell: pwsh
-        run: |
-          $ocrinfo = Get-Content selftest-after.txt -ErrorAction SilentlyContinue
-          $german = ($ocrinfo -match 'de')
-          $fail = 0
-          foreach ($lid in 'light','dark') {
-            $dir = "e2e-$lid"; New-Item -ItemType Directory -Force $dir | Out-Null
-            $args = @('--make-testscan', "$dir\scan")
-            if ($lid -eq 'dark') { $args += '--dark' }
-            if ($german) { $args += '--umlauts' }
-            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList $args
-            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--process',"$dir\scan\scan.png",'--out',"$dir\out",'--format','jpg','--report',"$dir\report.json",'--profiles',"$dir\none"
-            "=== $lid ==="; Get-Content "$dir\report.json" -Encoding UTF8
-            $expected = (Get-Content "$dir\scan\expected.txt" -Encoding UTF8 | Where-Object { $_ }) | Sort-Object
-            $got = (Get-ChildItem "$dir\out" -Filter *.jpg -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName }) | Sort-Object
-            "erwartet: $($expected -join ', ')"; "erhalten: $($got -join ', ')"
-            if (($expected -join '|') -ne ($got -join '|')) { Write-Host "::warning::E2E $lid weicht ab"; $fail++ }
-          }
-          if ($fail -gt 0) { exit 1 }
-
       - name: Oberfläche rendern (Screenshot des Hauptfensters + Design-Editors)
         shell: pwsh
         run: |
@@ -127,9 +94,61 @@ jobs:
             e2e-*/
             ui-*.png
 
+  # Texterkennung/End-zu-End: braucht das deutsche OCR-Paket (~10 min). Läuft parallel zum Hauptjob und nur,
+  # wenn es darauf ankommt: Release-Tag, manueller Start oder "[ocr]" in der Commit-Nachricht.
+  ocr-e2e:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ocr]') }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      AUSWEIS_NOUI: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build x64
+        run: |
+          dotnet build src/App/App.csproj -c Release -p:Platform=x64 -o out/x64
+          Copy-Item out/x64/Ausweis-Scanner.exe Ausweis-Scanner-x64.exe
+      - name: Deutsches OCR-Sprachpaket installieren (best effort)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $cap = Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.OCR*de-DE*' }
+          $cap | Format-Table Name, State
+          if ($cap.State -ne 'Installed') { Add-WindowsCapability -Online -Name $cap.Name | Out-String }
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--selftest','--report','selftest-after.txt'
+          Get-Content selftest-after.txt
+
+      - name: End-zu-End mit synthetischen Scans (echte Windows-OCR)
+        shell: pwsh
+        run: |
+          $ocrinfo = Get-Content selftest-after.txt -ErrorAction SilentlyContinue
+          $german = ($ocrinfo -match 'de')
+          $fail = 0
+          foreach ($lid in 'light','dark') {
+            $dir = "e2e-$lid"; New-Item -ItemType Directory -Force $dir | Out-Null
+            $args = @('--make-testscan', "$dir\scan")
+            if ($lid -eq 'dark') { $args += '--dark' }
+            if ($german) { $args += '--umlauts' }
+            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList $args
+            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--process',"$dir\scan\scan.png",'--out',"$dir\out",'--format','jpg','--report',"$dir\report.json",'--profiles',"$dir\none"
+            "=== $lid ==="; Get-Content "$dir\report.json" -Encoding UTF8
+            $expected = (Get-Content "$dir\scan\expected.txt" -Encoding UTF8 | Where-Object { $_ }) | Sort-Object
+            $got = (Get-ChildItem "$dir\out" -Filter *.jpg -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName }) | Sort-Object
+            "erwartet: $($expected -join ', ')"; "erhalten: $($got -join ', ')"
+            if (($expected -join '|') -ne ($got -join '|')) { Write-Host "::warning::E2E $lid weicht ab"; $fail++ }
+          }
+          if ($fail -gt 0) { exit 1 }
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ocr-e2e
+          path: |
+            selftest-after.txt
+            e2e-*/
+
   # Ein Versions-Tag (z. B. v0.1.0) veröffentlicht die geprüften Programme als GitHub-Release.
   release:
-    needs: [test-core, build-windows]
+    needs: [test-core, build-windows, ocr-e2e]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
