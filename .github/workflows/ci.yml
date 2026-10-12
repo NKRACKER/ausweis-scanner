@@ -1,0 +1,161 @@
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with: { dotnet-version: "8.0.x" }
+      - run: dotnet test tests/Core.Tests -c Release
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      AUSWEIS_NOUI: "1"   # keine modalen Fehlerdialoge in der CI
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build x64 + x86 (.NET Framework 4.8, in Windows eingebaut)
+        run: |
+          # Bei Versions-Tags (v1.2.3) wird die Nummer ins Programm geschrieben – die Update-Prüfung vergleicht damit.
+          $vp = @(); if ('${{ github.ref_name }}' -match '^v(\d+\.\d+\.\d+)$') { $vp = @("-p:Version=$($Matches[1])") }
+          dotnet build src/App/App.csproj -c Release -p:Platform=x64 -o out/x64 @vp
+          dotnet build src/App/App.csproj -c Release -p:Platform=x86 -o out/x86 @vp
+          Copy-Item out/x64/Ausweis-Scanner.exe Ausweis-Scanner-x64.exe
+          Copy-Item out/x86/Ausweis-Scanner.exe Ausweis-Scanner-x86.exe
+          Get-Item Ausweis-Scanner-*.exe | Format-Table Name, Length
+
+      - name: Selftest + Diagnose
+        shell: pwsh
+        run: |
+          foreach ($a in 'x64','x86') {
+            Start-Process -Wait -FilePath ".\Ausweis-Scanner-$a.exe" -ArgumentList '--selftest','--report',"selftest-$a.txt"
+            "== $a =="; Get-Content "selftest-$a.txt"
+          }
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--diag','diag.txt'
+          Get-Content diag.txt
+
+      - name: Update-Mechanik (Austausch + Neustart der eigenen .exe, Release-Abfrage, Download mit Prüfsumme)
+        shell: pwsh
+        timeout-minutes: 6
+        env:
+          AUSWEIS_GH_TOKEN: ${{ github.token }}
+        run: |
+          function Run-Exe($exe, $argList) {   # mit Zeitlimit: wartet nicht ewig und wartet nicht auf Kindprozesse
+            $p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru
+            if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "Zeitüberschreitung: $exe $argList" }
+          }
+          foreach ($a in 'x64','x86') {
+            try { Run-Exe ".\Ausweis-Scanner-$a.exe" @('--update-selftest',"upd-work-$a") } catch { Write-Host $_ }
+            Get-ChildItem "upd-work-$a" -ErrorAction SilentlyContinue | Format-Table Name, Length
+            Get-Content "upd-work-$a\trace.txt" -ErrorAction SilentlyContinue
+            Get-ChildItem "upd-work-$a","." -Filter crash-*.txt -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name) =="; Get-Content $_.FullName }
+            $r = Get-Content "upd-work-$a\selftest.txt" -ErrorAction SilentlyContinue; "[$a] $r"
+            if (-not ($r -and $r.StartsWith('OK'))) { throw "Update-Selbsttest ($a) fehlgeschlagen" }
+          }
+          Run-Exe ".\Ausweis-Scanner-x64.exe" @('--update-check','--force','--report','upd-check.txt')
+          $c = Get-Content upd-check.txt; "update-check: $c"
+          if ($c -notmatch '^update .*asset=Ausweis-Scanner-x64\.exe') { throw "Update-Abfrage liefert kein Release: $c" }
+          Run-Exe ".\Ausweis-Scanner-x64.exe" @('--update-download-test','--report','upd-dl.txt')
+          $d = Get-Content upd-dl.txt; "update-download: $d"
+          if (-not $d.StartsWith('ok')) { throw "Update-Download fehlgeschlagen: $d" }
+
+      - name: Deutsches OCR-Sprachpaket installieren (best effort)
+        if: ${{ !contains(github.event.head_commit.message, '[quick]') }}
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $cap = Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.OCR*de-DE*' }
+          $cap | Format-Table Name, State
+          if ($cap.State -ne 'Installed') { Add-WindowsCapability -Online -Name $cap.Name | Out-String }
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--selftest','--report','selftest-after.txt'
+          Get-Content selftest-after.txt
+
+      - name: End-zu-End mit synthetischen Scans (echte Windows-OCR)
+        if: ${{ !contains(github.event.head_commit.message, '[quick]') }}
+        shell: pwsh
+        run: |
+          $ocrinfo = Get-Content selftest-after.txt -ErrorAction SilentlyContinue
+          $german = ($ocrinfo -match 'de')
+          $fail = 0
+          foreach ($lid in 'light','dark') {
+            $dir = "e2e-$lid"; New-Item -ItemType Directory -Force $dir | Out-Null
+            $args = @('--make-testscan', "$dir\scan")
+            if ($lid -eq 'dark') { $args += '--dark' }
+            if ($german) { $args += '--umlauts' }
+            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList $args
+            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--process',"$dir\scan\scan.png",'--out',"$dir\out",'--format','jpg','--report',"$dir\report.json",'--profiles',"$dir\none"
+            "=== $lid ==="; Get-Content "$dir\report.json" -Encoding UTF8
+            $expected = (Get-Content "$dir\scan\expected.txt" -Encoding UTF8 | Where-Object { $_ }) | Sort-Object
+            $got = (Get-ChildItem "$dir\out" -Filter *.jpg -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName }) | Sort-Object
+            "erwartet: $($expected -join ', ')"; "erhalten: $($got -join ', ')"
+            if (($expected -join '|') -ne ($got -join '|')) { Write-Host "::warning::E2E $lid weicht ab"; $fail++ }
+          }
+          if ($fail -gt 0) { exit 1 }
+
+      - name: Oberfläche rendern (Screenshot des Hauptfensters + Design-Editors)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force ui-scan | Out-Null
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--make-testscan','ui-scan'
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-main.png','ui-scan\scan.png'
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-empty.png'
+          Get-Item ui-*.png | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: windows-build
+          path: |
+            Ausweis-Scanner-x64.exe
+            Ausweis-Scanner-x86.exe
+            selftest-*.txt
+            diag.txt
+            upd-*.txt
+            upd-work-*/
+            e2e-*/
+            ui-*.png
+
+  # Ein Versions-Tag (z. B. v0.1.0) veröffentlicht die geprüften Programme als GitHub-Release.
+  release:
+    needs: [test-core, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: windows-build
+          path: dist
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          mkdir -p release
+          cp Ausweis-Scanner-x64.exe Ausweis-Scanner-x86.exe release/
+          cp e2e-light/scan/scan.png release/Beispiel-Scan.png
+          (cd release && sha256sum * > SHA256SUMS.txt)
+          cat > notes.md <<'EOF2'
+          ## Ausweis-Scanner ${{ github.ref_name }}
+
+          Portables Windows-Tool (keine Installation, keine Admin-Rechte): mehrere Schülerausweise pro Scan → je eine Datei `Nachname_Vorname`.
+
+          - **`Ausweis-Scanner-x64.exe`** – Standard (Windows 10/11, 64 Bit)
+          - **`Ausweis-Scanner-x86.exe`** – 32-Bit-Variante (für alte 32-Bit-TWAIN-Treiber)
+          - **`Beispiel-Scan.png`** – Beispiel-Scan zum Ausprobieren (ins Fenster ziehen)
+          - **`SHA256SUMS.txt`** – Prüfsummen
+
+          Nicht signiert: Windows SmartScreen kann warnen („Weitere Informationen → Trotzdem ausführen“).
+          Bedienung, Scanner-Anbindung, Design-Anlernen und Grenzen: README im Repository.
+
+          Automatisch geprüft (Windows-CI): Erkennung/Ausschneiden/Lesen von 6 synthetischen Ausweisen in 3 Layouts (gedreht, kopfüber, quer, heller/dunkler Deckel, Umlaute). **Nicht** getestet: echte Scanner und echte Ausweise.
+          EOF2
+          gh release create "${{ github.ref_name }}" release/* --repo "${{ github.repository }}" --title "Ausweis-Scanner ${{ github.ref_name }}" --notes-file notes.md
