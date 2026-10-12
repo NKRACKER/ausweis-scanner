@@ -54,9 +54,9 @@ sealed class ScanCanvas : Control
             Color c = q.Include ? Color.FromArgb(34, 197, 94) : Color.FromArgb(160, 160, 160);
             if (q.Include) { n++; using var fill = new SolidBrush(Color.FromArgb(55, c)); g.FillPolygon(fill, pts); }
             using (var pen = new Pen(c, q.Include ? 3 : 2) { DashStyle = q.Include ? DashStyle.Solid : DashStyle.Dash }) g.DrawPolygon(pen, pts);
-            var mid = new PointF(pts.Average(p => p.X), pts.Average(p => p.Y));
+            var mid = q.Include ? new PointF(pts.Min(p => p.X) + 16, pts.Min(p => p.Y) + 14) : new PointF(pts.Average(p => p.X), pts.Average(p => p.Y));   // Nummer in die Ecke, damit sie den Namen nicht verdeckt
             string label = q.Include ? n.ToString() : "✕";
-            using var f = Theme.Font(q.Include ? 16f : 14f, true);
+            using var f = Theme.Font(q.Include ? 12f : 14f, true);
             var sz = g.MeasureString(label, f); var bx = new RectangleF(mid.X - sz.Width / 2 - 6, mid.Y - sz.Height / 2 - 2, sz.Width + 12, sz.Height + 4);
             using (var bb = new SolidBrush(Color.FromArgb(220, q.Include ? Color.FromArgb(22, 163, 74) : Color.FromArgb(110, 110, 110)))) g.FillRectangle(bb, bx);
             g.DrawString(label, f, Brushes.White, bx.X + 6, bx.Y + 2);
