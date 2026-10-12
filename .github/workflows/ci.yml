@@ -61,10 +61,15 @@ jobs:
           }
           Run-Exe ".\Ausweis-Scanner-x64.exe" @('--update-check','--force','--report','upd-check.txt')
           $c = Get-Content upd-check.txt; "update-check: $c"
-          if ($c -notmatch '^update .*asset=Ausweis-Scanner-x64\.exe') { throw "Update-Abfrage liefert kein Release: $c" }
-          Run-Exe ".\Ausweis-Scanner-x64.exe" @('--update-download-test','--report','upd-dl.txt')
-          $d = Get-Content upd-dl.txt; "update-download: $d"
-          if (-not $d.StartsWith('ok')) { throw "Update-Download fehlgeschlagen: $d" }
+          if ($c -match '404') {
+            # Nur beim allerersten Release: es gibt noch keins, gegen das geprüft werden könnte.
+            Write-Host 'Noch kein Release vorhanden - Abfrage-/Download-Test übersprungen.'
+          } else {
+            if ($c -notmatch '^update .*asset=Ausweis-Scanner-x64\.exe') { throw "Update-Abfrage liefert kein Release: $c" }
+            Run-Exe ".\Ausweis-Scanner-x64.exe" @('--update-download-test','--report','upd-dl.txt')
+            $d = Get-Content upd-dl.txt; "update-download: $d"
+            if (-not $d.StartsWith('ok')) { throw "Update-Download fehlgeschlagen: $d" }
+          }
 
       - name: Deutsches OCR-Sprachpaket installieren (best effort)
         if: ${{ !contains(github.event.head_commit.message, '[quick]') }}
