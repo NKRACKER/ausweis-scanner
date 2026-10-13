@@ -116,25 +116,27 @@ sealed class ScanViewForm : Form
     public ScanViewForm(ScanInfo scan, string? note)
     {
         Icon = Theme.AppIcon; Text = "Gesamter Scan"; BackColor = Theme.Surface; StartPosition = FormStartPosition.CenterParent; KeyPreview = true;
-        var wa = Screen.PrimaryScreen.WorkingArea; Size = new Size(Math.Min(1100, wa.Width), Math.Min(860, wa.Height)); MinimumSize = new Size(700, 520);
+        Size = new Size(1100, 860); MinimumSize = new Size(700, 520);
         _canvas = new ScanCanvas(scan) { Dock = DockStyle.Fill, Quads = scan.Quads.Select(q => new ScanQuad { Corners = q.Corners, Item = q.Item, Include = q.Item != null, Manual = q.Manual }).ToList() };
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Theme.Surface };
-        _info.SetBounds(16, 8, 1000, 24); _hint.SetBounds(16, 34, 1000, 22);
-        top.Controls.AddRange(new Control[] { _info, _hint });
+        var top = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Theme.Surface, Padding = new Padding(16, 8, 16, 4) };
+        _hint.Dock = DockStyle.Top; _hint.Height = 24; _hint.AutoEllipsis = true; _info.Dock = DockStyle.Top; _info.Height = 26; _info.AutoEllipsis = true;
+        top.Controls.Add(_hint); top.Controls.Add(_info);   // später hinzugefügt = zuerst angedockt → _info oben
         var bar = new Panel { Dock = DockStyle.Bottom, Height = 62, BackColor = Theme.Surface };
         bar.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };
         var ok = Theme.Primary("Übernehmen", 170, 40, Theme.Ok); var cancel = Theme.Ghost("Abbrechen", 110, 40);
         ok.DialogResult = DialogResult.OK; cancel.DialogResult = DialogResult.Cancel; AcceptButton = ok; CancelButton = cancel;
-        _four.Location = new Point(16, 20); bar.Controls.Add(_four);
-        bar.Controls.AddRange(new Control[] { ok, cancel });
-        bar.Resize += (_, __) => { ok.Location = new Point(bar.Width - 186, 11); cancel.Location = new Point(bar.Width - 306, 11); };
+        _four.Dock = DockStyle.Left; _four.Padding = new Padding(16, 0, 0, 0); _four.AutoSize = true; _four.TextAlign = ContentAlignment.MiddleLeft;
+        var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 10, 16, 0), BackColor = Color.Transparent };
+        btns.Controls.Add(ok); btns.Controls.Add(cancel);
+        bar.Controls.Add(btns); bar.Controls.Add(_four);
         Controls.Add(_canvas); Controls.Add(top); Controls.Add(bar);
 
         _four.CheckedChanged += (_, __) => { _canvas.SetFourCorners(_four.Checked); Idle(); };
         _canvas.Changed += Idle; _canvas.Hint += h => { if (h.Length > 0) _hint.Text = h; else Idle(); };
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape && _four.Checked) { _canvas.CancelPending(); e.Handled = true; e.SuppressKeyPress = true; } };
         _canvas.Resize += (_, __) => _canvas.Invalidate();
+        Theme.Fit(this);
         Idle(note);
     }
 

@@ -40,13 +40,11 @@ sealed class SettingsForm : Form
     public SettingsForm(MainForm m, int tab)
     {
         _m = m; _s = m.S; if (Theme.AppIcon != null) Icon = Theme.AppIcon; Text = "Einstellungen"; Size = new Size(720, 590); StartPosition = FormStartPosition.CenterParent; FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; Font = Theme.Font(10f); BackColor = Theme.Bg;
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 58, BackColor = Theme.Surface };
+        var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, BackColor = Theme.Surface, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 11, 20, 0) };
         var ok = Theme.Primary("Fertig", 120, 36); var cancel = Theme.Ghost("Abbrechen", 110, 36);
-        // Position über Resize statt Anchor: Anchor würde gegen die noch ungültige Anfangsbreite des Panels gerechnet (Knöpfe landeten außerhalb)
-        bottom.Resize += (_, __) => { ok.Location = new Point(bottom.Width - 140, 11); cancel.Location = new Point(bottom.Width - 260, 11); };
         ok.DialogResult = DialogResult.None; cancel.DialogResult = DialogResult.Cancel;
         ok.Click += (_, __) => { Apply(); DialogResult = DialogResult.OK; Close(); };
-        bottom.Controls.Add(ok); bottom.Controls.Add(cancel); AcceptButton = ok; CancelButton = cancel;
+        bottom.Controls.Add(ok); bottom.Controls.Add(cancel); AcceptButton = ok; CancelButton = cancel;   // Fluss von rechts: „Fertig“ ganz rechts
         Controls.Add(_tabs); Controls.Add(bottom);
 
         _tabs.TabPages.Add(PageGeneral()); _tabs.TabPages.Add(PageScanner()); _tabs.TabPages.Add(PageDesign()); _tabs.TabPages.Add(PageAdvanced()); _tabs.TabPages.Add(PageDiag());
@@ -59,6 +57,7 @@ sealed class SettingsForm : Form
             foreach (var k in kids) inner.Controls.Add(k);
             p.Controls.Add(inner);
         }
+        Theme.Fit(this);
         _tabs.SelectedIndex = Math.Max(0, Math.Min(tab, _tabs.TabCount - 1));
         _tabs.SelectedIndexChanged += async (_, __) => { if (_tabs.SelectedIndex == 4 && !_diagLoaded) await LoadDiag(); };
         Shown += async (_, __) => { if (_tabs.SelectedIndex == 4 && !_diagLoaded) await LoadDiag(); };

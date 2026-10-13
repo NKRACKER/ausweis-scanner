@@ -73,7 +73,7 @@ sealed class ProfileEditor : Form
     public ProfileEditor(Raster card, IOcrEngine? ocr, Profile? existing)
     {
         _card = card; _ocr = ocr; _p = existing ?? new Profile { Name = "Neues Design" };
-        Icon = Theme.AppIcon; Text = "Ausweis-Design anlernen"; Size = new Size(1020, 640); StartPosition = FormStartPosition.CenterParent; MinimumSize = new Size(820, 520);
+        Icon = Theme.AppIcon; Text = "Ausweis-Design anlernen"; Size = new Size(1020, 640); StartPosition = FormStartPosition.CenterParent; MinimumSize = new Size(820, 520); Font = Theme.Font(9.5f);
         var right = new Panel { Dock = DockStyle.Right, Width = 340, Padding = new Padding(10) };
         _panel.Dock = DockStyle.Fill; _panel.SetImage(BitmapCodec.ToBitmap(card));
         Controls.Add(_panel); Controls.Add(right);
@@ -103,6 +103,7 @@ sealed class ProfileEditor : Form
             _panel.Fields.RemoveAll(f => f.role == role || (role == "name" && f.role != "name") || (role != "name" && f.role == "name"));
             _panel.Fields.Add((role, r)); _panel.Invalidate(); Test();
         };
+        Theme.Fit(this);
     }
 
     Profile Build()
@@ -147,7 +148,7 @@ sealed class TextDialog : Form
         var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6) };
         var close = new Button { Text = "Schließen", Width = 100, DialogResult = DialogResult.OK }; var copy = new Button { Text = "In Zwischenablage kopieren", Width = 190 };
         copy.Click += (_, __) => { try { Clipboard.SetText(tb.Text); copy.Text = "Kopiert ✓"; } catch { } };
-        bar.Controls.Add(close); bar.Controls.Add(copy); Controls.Add(tb); Controls.Add(bar); AcceptButton = close;
+        bar.Controls.Add(close); bar.Controls.Add(copy); Controls.Add(tb); Controls.Add(bar); AcceptButton = close; Theme.Fit(this);
     }
 }
 

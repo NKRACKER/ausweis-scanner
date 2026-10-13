@@ -78,6 +78,12 @@ jobs:
           Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--make-testscan','ui-scan'
           Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-main.png','ui-scan\scan.png'
           Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-empty.png'
+          # Windows-Anzeigeskalierung simulieren (125 %, 150 %): Knöpfe/Texte dürfen nicht abgeschnitten werden oder sich überdecken
+          foreach ($sc in '1.25','1.5') {
+            $env:AUSWEIS_UI_SCALE = $sc; $t = $sc.Replace('.','')
+            Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test',"ui-main-s$t.png",'ui-scan\scan.png'
+          }
+          Remove-Item Env:\AUSWEIS_UI_SCALE
           Get-Item ui-*.png | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v6
@@ -144,9 +150,9 @@ jobs:
             e2e-*/
 
   # Wie ocr-e2e, aber mit nachinstalliertem deutschem OCR-Paket (Windows Update, dauert ~15 min) und Umlaut-Namen.
-  # Blockiert das Release nicht; läuft bei Tags, manuellem Start oder "[de]" in der Commit-Nachricht.
+  # Blockiert das Release nicht; läuft nur bei manuellem Start oder "[de]" in der Commit-Nachricht (nötig, wenn die OCR-Umsetzung geändert wurde).
   ocr-e2e-de:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[de]') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[de]') }}
     runs-on: windows-latest
     timeout-minutes: 40
     env:

@@ -22,7 +22,7 @@ sealed class CardControl : Panel
 
     public CardControl(CardItem item, int number)
     {
-        Item = item; Size = new Size(350, 296); Margin = new Padding(10); BackColor = Theme.Surface; DoubleBuffered = true;
+        Item = item; Size = new Size(350, 296); BackColor = Theme.Surface; DoubleBuffered = true;
         _pic.SetBounds(16, 10, 326, 184); _pic.Click += (_, __) => PreviewRequested?.Invoke(this);
         new ToolTip().SetToolTip(_pic, "Klicken für Großansicht");
         _status.SetBounds(16, 200, 190, 22);
@@ -41,6 +41,7 @@ sealed class CardControl : Panel
         _rot.Click += (_, __) => RotateRequested?.Invoke(this, 1);
         _del.Click += (_, __) => RemoveRequested?.Invoke(this);
         _more.Click += (_, __) => ShowMenu();
+        Scale(new SizeF(Theme.Factor, Theme.Factor)); Margin = new Padding(Theme.Px(10));   // Kacheln entstehen erst nach dem Start → nicht von der Fenster-Skalierung erfasst
         RefreshFromItem(number);
     }
 
@@ -50,14 +51,14 @@ sealed class CardControl : Panel
     {
         base.OnPaint(e);
         using (var p = new Pen(Theme.Line)) e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
-        using (var b = new SolidBrush(_stripe)) e.Graphics.FillRectangle(b, 0, 0, 6, Height);
+        using (var b = new SolidBrush(_stripe)) e.Graphics.FillRectangle(b, 0, 0, Theme.Px(6), Height);
     }
 
     public void RefreshFromItem(int? number = null)
     {
         if (number.HasValue) _number = number.Value;
         _binding = true; _last.Text = Item.Last; _first.Text = Item.First; _binding = false;
-        _pic.Image?.Dispose(); _pic.Image = BitmapCodec.Thumbnail(Item.Image, 326, 184);
+        _pic.Image?.Dispose(); _pic.Image = BitmapCodec.Thumbnail(Item.Image, Math.Max(1, _pic.Width), Math.Max(1, _pic.Height));
         UpdateStatus();
     }
 
