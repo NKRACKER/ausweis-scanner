@@ -89,6 +89,7 @@ jobs:
           Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-main-narrow.png','ui-scan\scan.png'
           Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-empty-narrow.png'
           Remove-Item Env:\AUSWEIS_UI_SIZE
+          Get-ChildItem -Filter crash-*.txt -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name) =="; Get-Content $_.FullName }
           Get-Item ui-*.png | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v6
@@ -105,6 +106,7 @@ jobs:
             e2e-*/
             ui-*.png
             ui-scan/scan.png
+            crash-*.txt
 
   # Texterkennung/End-zu-End mit der auf dem Runner vorhandenen OCR-Sprache (ohne Umlaute, schnell). Läuft parallel zum
   # Hauptjob und nur, wenn es darauf ankommt: Release-Tag, manueller Start oder "[ocr]" in der Commit-Nachricht.
