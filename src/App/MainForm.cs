@@ -543,20 +543,26 @@ sealed class MainForm : Form
     // ------------------------------------------------------------------ Design anlernen (aus den Einstellungen aufgerufen)
     internal void TeachDesign(IWin32Window owner)
     {
-        Raster? sample = _cards.FirstOrDefault()?.Item.Image;
-        if (sample == null)
+        // Beispielkarten: die schon erkannten Ausweise der Liste (bis 8 – je mehr, desto besser lässt sich das Design prüfen); sonst eine Datei wählen
+        var samples = _cards.Take(8).Select(c => c.Item.Image).ToList();
+        if (samples.Count == 0)
         {
-            using var d = new OpenFileDialog { Title = "Foto oder Scan einer Beispielkarte wählen", Filter = "Bilder|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff|Alle Dateien|*.*" };
+            using var d = new OpenFileDialog { Title = "Foto oder Scan von Beispielkarten wählen", Multiselect = true, Filter = "Bilder|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff|Alle Dateien|*.*" };
             if (d.ShowDialog(owner) != DialogResult.OK) return;
             try
             {
-                var l = BitmapCodec.LoadFile(d.FileName)[0];
-                var det = CardDetector.Detect(l.Image, new DetectorOptions { Dpi = l.Dpi >= 100 && l.Dpi != 96 ? l.Dpi : Math.Max(100, Pipeline.EstimateDpiFromPage(l.Image)) });
-                sample = det.Cards.Count > 0 ? CardExtractor.Extract(l.Image, det.Cards[0]) : l.Image;   // kein Rahmen erkannt → Bild gilt als Karte
+                foreach (var fn in d.FileNames.Take(8))
+                {
+                    var l = BitmapCodec.LoadFile(fn)[0];
+                    var det = CardDetector.Detect(l.Image, new DetectorOptions { Dpi = l.Dpi >= 100 && l.Dpi != 96 ? l.Dpi : Math.Max(100, Pipeline.EstimateDpiFromPage(l.Image)) });
+                    if (det.Cards.Count > 0) foreach (var dc in det.Cards.Take(8 - samples.Count)) samples.Add(CardExtractor.Extract(l.Image, dc));   // mehrere Karten in einem Scan → alle als Beispiele
+                    else samples.Add(l.Image);                                                                                                         // kein Rahmen erkannt → Bild gilt als Karte
+                    if (samples.Count >= 8) break;
+                }
             }
             catch (Exception e) { MessageBox.Show("Bild konnte nicht gelesen werden: " + e.Message, Text); return; }
         }
-        using var ed = new ProfileEditor(sample, _ocr, null);
+        using var ed = new ProfileEditor(samples, _ocr, null);
         if (ed.ShowDialog(owner) != DialogResult.OK || ed.Result == null) return;
         try { ProfileStore.Save(Paths.ProfilesDir, ed.Result); ReloadProfiles(ed.Result.Name); }
         catch (Exception e) { MessageBox.Show("Design konnte nicht gespeichert werden: " + e.Message, Text); }
@@ -611,8 +617,9 @@ sealed class MainForm : Form
         {
             var prof = new Profile { Name = "Test-Design" };
             prof.Fields.Add(new FieldRegion { Role = "name", X = 0.32, Y = 0.36, W = 0.62, H = 0.14 });
-            using var ed = new ProfileEditor(_cards[0].Item.Image, _ocr, prof) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
+            using var ed = new ProfileEditor(_cards.Take(3).Select(c => c.Item.Image).ToList(), _ocr, prof) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
             ed.Show(); await Task.Delay(500); Application.DoEvents();
+            await ed.DemoSuggest(); await Task.Delay(1500); Application.DoEvents();   // OCR-Kästen + automatischer Vorschlag + Test
             Snap(ed, baseName + "-editor.png");
         }
         if (_cards.Count > 0 && _cards[0].Item.Scan != null)

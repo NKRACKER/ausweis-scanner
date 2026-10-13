@@ -45,7 +45,7 @@ Das Tool braucht kein festes Layout. Die Namenssuche läuft in drei Stufen, jewe
 
 Die Auswahl **„Automatisch“** probiert alle gespeicherten Designs durch und merkt sich das passende. Passt kein Profil, fällt es auf Stufe 2/3 zurück – es endet also nie bei „leer“, und von Hand eintippen geht immer.
 
-**Neues Design anlernen:** Einstellungen → *Ausweis-Design* → `Neues Design anlernen…` → Beispielkarte (oder schon gescannte Karte) → mit der Maus einen Rahmen um das Namensfeld ziehen (oder getrennt Nachname/Vorname) → `Testen` → speichern. Das Design liegt als JSON im Ordner `profile` (neben der `.exe` in `Ausweis-Scanner-Daten`, sonst unter `%LOCALAPPDATA%\Ausweis-Scanner`) und kann von Hand bearbeitet oder zwischen Rechnern kopiert werden:
+**Neues Design anlernen:** Einstellungen → *Ausweis-Design* → `Neues Design anlernen…`. Als Beispiele dienen die schon erkannten Ausweise der Liste (oder eine Datei). Das Programm zeigt den erkannten Text als anklickbare Kästen; ein Klick auf die Namenszeile markiert sie, oder man zieht einen Rahmen. `Automatisch vorschlagen` erledigt das meist schon selbst, `An allen Beispielen testen` prüft das Design auf allen Beispielkarten. Das Design liegt als JSON im Ordner `profile` (neben der `.exe` in `Ausweis-Scanner-Daten`, sonst unter `%LOCALAPPDATA%\Ausweis-Scanner`) und kann von Hand bearbeitet oder zwischen Rechnern kopiert werden:
 
 ```json
 {

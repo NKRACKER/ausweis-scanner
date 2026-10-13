@@ -244,3 +244,47 @@ public class EnsembleAndEnhanceTests
         Assert.True(Ink() < 70);                              // Text bleibt dunkel
     }
 }
+
+public class DesignLearnerTests
+{
+    static Raster UprightCard() { var r = new Raster(856, 540); r.Fill(240, 240, 240); for (int y = 0; y < 6; y++) for (int x = 0; x < 6; x++) r.Set(x, y, 255, 0, 0); return r; }
+
+    [Fact]
+    public void ReadLayout_MapsOcrBoxesBackToCardFractions()
+    {
+        var ocr = new FakeOcr(); ocr.FullLayout.Add(FakeOcr.Line("Name: Mustermann, Max", 100, 200, 450, 40));
+        var lines = DesignLearner.ReadLayout(UprightCard(), ocr);
+        Assert.Single(lines);
+        double k = 1400.0 / 856;
+        Assert.InRange(lines[0].Frac.X, (100 - 16) / k / 856 - 0.002, (100 - 16) / k / 856 + 0.002);
+        Assert.InRange(lines[0].Frac.Y, (200 - 16) / k / 540 - 0.002, (200 - 16) / k / 540 + 0.002);
+        Assert.InRange(lines[0].Frac.W, 450 / k / 856 - 0.002, 450 / k / 856 + 0.002);
+    }
+
+    [Fact]
+    public void Suggest_SingleLineWithComma_BuildsNameFieldAndFormat()
+    {
+        var ocr = new FakeOcr();
+        ocr.FullLayout.AddRange(new[] { FakeOcr.Line("Schülerausweis", 100, 20, 500, 60), FakeOcr.Line("Name: Mustermann, Max", 100, 200, 450, 40), FakeOcr.Line("Klasse 7b", 100, 260, 200, 30) });
+        var p = DesignLearner.Suggest(UprightCard(), ocr, out var why);
+        Assert.NotNull(p); Assert.Single(p!.Fields); Assert.Equal("name", p.Fields[0].Role); Assert.Equal(NameFormat.LastCommaFirst, p.Format);
+        Assert.InRange(p.Fields[0].Y, 0.05, 0.20); Assert.True(p.Fields[0].X >= 0 && p.Fields[0].X + p.Fields[0].W <= 1.0001);
+        Assert.Contains("Mustermann", why);
+    }
+
+    [Fact]
+    public void Suggest_SeparateLabelLines_BuildsLastAndFirstFields()
+    {
+        var ocr = new FakeOcr();
+        ocr.FullLayout.AddRange(new[] { FakeOcr.Line("Schülerausweis", 100, 20, 500, 60), FakeOcr.Line("Name: Eickmann", 100, 300, 400, 40), FakeOcr.Line("Vorname: Mieke Kathrin", 100, 360, 480, 40) });
+        var p = DesignLearner.Suggest(UprightCard(), ocr, out _);
+        Assert.NotNull(p); Assert.Equal(new[] { "last", "first" }, p!.Fields.Select(f => f.Role).ToArray());
+        Assert.True(p.Fields[1].Y > p.Fields[0].Y);
+    }
+
+    [Fact]
+    public void Suggest_NothingRecognized_ReturnsNullWithHint()
+    {
+        Assert.Null(DesignLearner.Suggest(UprightCard(), new FakeOcr(), out var why)); Assert.False(string.IsNullOrEmpty(why));
+    }
+}
