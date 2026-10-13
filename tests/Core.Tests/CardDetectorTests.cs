@@ -102,4 +102,30 @@ public class CardDetectorTests
         var res = Detect(Make(Six(), 200, 150, noise: 12), 150);
         Assert.Equal(6, res.Cards.Count);
     }
+
+    [Theory]
+    [InlineData(20)]    // dunkler Deckel
+    [InlineData(242)]   // weißer Deckel, weiße Karte
+    public void FitCard_FindsCornersFromRoughRegion(int lid)
+    {
+        var card = new Card { CxMm = 100, CyMm = 120, AngleDeg = 23 };
+        var scan = Make(new[] { card, new Card { CxMm = 55, CyMm = 45, AngleDeg = -6 } }, lid: (byte)lid, dpi: 150);
+        double px = 150 / 25.4;
+        // grober, lockerer Bereich um die Karte (ca. 25 % zu groß, nicht gedreht)
+        var roi = new RectD((100 - 60) * px, (120 - 45) * px, 120 * px, 90 * px);
+        var fit = CardDetector.FitCard(scan, roi, new DetectorOptions { Dpi = 150 });
+        Assert.NotNull(fit);
+        Assert.InRange(fit!.WidthMm, 83, 90); Assert.InRange(fit.HeightMm, 52, 58);
+        Assert.InRange(Math.Abs(fit.AngleDeg - 23), 0, 2.5);
+        var cx = fit.Corners.Average(p => p.X) / px; var cy = fit.Corners.Average(p => p.Y) / px;
+        Assert.InRange(cx, 98, 102); Assert.InRange(cy, 118, 122);
+    }
+
+    [Fact]
+    public void FitCard_EmptyRegion_ReturnsNull()
+    {
+        var scan = Make(new[] { new Card { CxMm = 55, CyMm = 45, AngleDeg = 0 } }, lid: 20, dpi: 150);
+        double px = 150 / 25.4;
+        Assert.Null(CardDetector.FitCard(scan, new RectD(120 * px, 200 * px, 40 * px, 30 * px), new DetectorOptions { Dpi = 150 }));
+    }
 }

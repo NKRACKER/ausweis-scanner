@@ -20,6 +20,13 @@ public sealed class DetectorOptions
     /// <summary>Rand, der vom erkannten Rechteck abgezogen wird (entfernt Kantenschatten/Scannerhintergrund).</summary>
     public double EdgeInsetMm = 0.6;
     public int WorkMaxSide = 1000;
+    /// <summary>
+    /// Schließradien (mm), die nacheinander probiert werden; das Ergebnis mit den meisten Karten gewinnt (bei Gleichstand der größere Radius).
+    /// Große Radien schließen lückenhafte Ränder heller Karten auf hellem Deckel, kleine trennen eng liegende Karten.
+    /// </summary>
+    public double[] CloseMm = { 2.0, 1.2, 0.6 };
+    /// <summary>Randstreifen des Scans (mm), der ignoriert wird: Scanrand, Schatten und Rahmen am Bildrand würden sonst alles zu einem Objekt verbinden.</summary>
+    public double BorderBandMm = 1.0;
 }
 
 public sealed class DetectedCard
@@ -49,6 +56,17 @@ public static class CardDetector
     public static DetectionResult Detect(Raster scan, DetectorOptions? opt = null)
     {
         opt ??= new DetectorOptions();
+        DetectionResult? best = null;
+        foreach (var cl in opt.CloseMm.Length > 0 ? opt.CloseMm : new[] { 0.6 })
+        {
+            var r = DetectWith(scan, opt, cl);
+            if (best == null || r.Cards.Count > best.Cards.Count) best = r;
+        }
+        return best!;
+    }
+
+    static DetectionResult DetectWith(Raster scan, DetectorOptions opt, double closeMm)
+    {
         var res = new DetectionResult();
         double scale = Math.Min(1.0, (double)opt.WorkMaxSide / Math.Max(scan.Width, scan.Height));
         int w = Math.Max(16, (int)Math.Round(scan.Width * scale)), h = Math.Max(16, (int)Math.Round(scan.Height * scale));
@@ -56,7 +74,8 @@ public static class CardDetector
         var small = scan.Resize(w, h);
         double pxPerMm = opt.Dpi / 25.4 * scale;
 
-        var mask = BuildMask(small, pxPerMm);
+        var mask = BuildMask(small, pxPerMm, closeMm, opt.BorderBandMm);
+        int bandPx = (int)Math.Round(opt.BorderBandMm * pxPerMm);
         var comps = Label(mask, w, h);
         double minArea = 0.5 * opt.MinShortMm * opt.MinShortMm * 1.15 * pxPerMm * pxPerMm;
 
@@ -72,7 +91,10 @@ public static class CardDetector
             var shortAxis = new PointD(-longAxis.Y, longAxis.X);   // zeigt (bei Langseite nach rechts) nach unten
 
             double Lmm = longLen / pxPerMm, Smm = shortLen / pxPerMm;
-            double rect = c.Area / Math.Max(1.0, longLen * shortLen);
+            double fill = c.Area / Math.Max(1.0, longLen * shortLen);
+            // Rechteckigkeit über die konvexe Hülle: Löcher in der Maske (weiße Kartenflächen auf weißem Deckel) bestrafen nicht;
+            // die Füllung muss aber noch zeigen, dass das Objekt kein verstreuter Staubhaufen ist.
+            double rect = fill >= 0.45 ? PolyArea(hull) / Math.Max(1.0, longLen * shortLen) : fill;
             string where = $"bei x≈{(int)(c.CenterX / scale)}, y≈{(int)(c.CenterY / scale)}";
 
             if (c.Area < minArea) continue;
@@ -110,7 +132,7 @@ public static class CardDetector
                 WidthMm = Lmm, HeightMm = Smm,
                 AngleDeg = Math.Atan2(longAxis.Y, longAxis.X) * 180 / Math.PI,
                 Rectangularity = rect,
-                TouchesEdge = c.MinX <= 1 || c.MinY <= 1 || c.MaxX >= w - 2 || c.MaxY >= h - 2,
+                TouchesEdge = c.MinX <= bandPx + 2 || c.MinY <= bandPx + 2 || c.MaxX >= w - bandPx - 3 || c.MaxY >= h - bandPx - 3,
             };
             card.Confidence = Math.Min(1.0, Math.Max(0, (rect - 0.8) / 0.18));
             if (card.TouchesEdge) { card.Confidence *= 0.6; card.Warnings.Add("Karte liegt am Scanrand – evtl. abgeschnitten."); }
@@ -118,6 +140,63 @@ public static class CardDetector
         }
         res.Cards = SortReadingOrder(res.Cards);
         return res;
+    }
+
+    /// <summary>
+    /// Findet die Karte in einem von Hand gezogenen Bereich (<paramref name="roi"/> in Scan-Pixeln): Der Bereich muss nur grob um die Karte liegen.
+    /// Liefert die genauen vier Ecken oder null, wenn dort nichts Kartenähnliches gefunden wird.
+    /// </summary>
+    public static DetectedCard? FitCard(Raster scan, RectD roi, DetectorOptions? opt = null)
+    {
+        opt ??= new DetectorOptions();
+        double scale = Math.Min(1.0, (double)opt.WorkMaxSide / Math.Max(scan.Width, scan.Height));
+        int w = Math.Max(16, (int)Math.Round(scan.Width * scale)), h = Math.Max(16, (int)Math.Round(scan.Height * scale));
+        scale = (double)w / scan.Width;
+        var small = scan.Resize(w, h);
+        double pxPerMm = opt.Dpi / 25.4 * scale;
+        var model = MakeModel(small, Gradient(small));          // Hintergrund immer aus dem ganzen Scan (im Ausschnitt läge der Rand auf der Karte)
+
+        int pad = (int)Math.Round(10 * pxPerMm);
+        int x0 = Math.Max(0, (int)Math.Floor(roi.X * scale) - pad), y0 = Math.Max(0, (int)Math.Floor(roi.Y * scale) - pad);
+        int x1 = Math.Min(w, (int)Math.Ceiling(roi.Right * scale) + pad), y1 = Math.Min(h, (int)Math.Ceiling(roi.Bottom * scale) + pad);
+        if (x1 - x0 < 8 || y1 - y0 < 8) return null;
+        var sub = small.Crop(x0, y0, x1 - x0, y1 - y0);
+        double cx = roi.X * scale + roi.W * scale / 2 - x0, cy = roi.Y * scale + roi.H * scale / 2 - y0;   // Mitte des Bereichs im Ausschnitt
+
+        foreach (var cl in new[] { 2.0, 1.2, 0.6 })
+        {
+            var mask = BuildMask(sub, pxPerMm, cl, 0, model);
+            Comp? bestC = null; List<PointD>? bestHull = null; double bestArea = 0;
+            foreach (var c in Label(mask, sub.Width, sub.Height))
+            {
+                if (c.Area < 0.5 * opt.MinShortMm * opt.MinShortMm * pxPerMm * pxPerMm) continue;
+                var hull = ConvexHull(c.Boundary);
+                if (hull.Count < 3 || !QuadTools.Contains(hull.Select(p => p).ToList(), new PointD(cx, cy))) continue;   // muss die Mitte des gezogenen Bereichs enthalten
+                if (c.Area > bestArea) { bestC = c; bestHull = hull; bestArea = c.Area; }
+            }
+            if (bestC == null || bestHull == null) continue;
+            MinRect(bestHull, out var center, out var u, out var v, out double lu, out double lv);
+            double longLen = Math.Max(lu, lv), shortLen = Math.Min(lu, lv);
+            double Lmm = longLen / pxPerMm, Smm = shortLen / pxPerMm, aspect = longLen / Math.Max(1.0, shortLen);
+            if (Smm < opt.MinShortMm * 0.8 || Lmm > opt.MaxLongMm * 1.25 || aspect < opt.MinAspect || aspect > opt.MaxAspect) continue;   // zu klein/groß/unförmig → mit kleinerem Radius erneut (evtl. mit Nachbarn verbunden)
+            if (PolyArea(bestHull) / Math.Max(1.0, longLen * shortLen) < 0.85) continue;   // Teilstück oder Gebilde statt einer Karte
+            var longAxis = lu >= lv ? u : v;
+            if (longAxis.X < -1e-9 || (Math.Abs(longAxis.X) <= 1e-9 && longAxis.Y < 0)) longAxis = longAxis * -1;
+            var shortAxis = new PointD(-longAxis.Y, longAxis.X);
+            double insetPx = opt.EdgeInsetMm * pxPerMm, L = longLen - 2 * insetPx, S = shortLen - 2 * insetPx;
+            PointD Back(PointD p) => new PointD((p.X + x0) / scale, (p.Y + y0) / scale);
+            return new DetectedCard
+            {
+                Corners = new[]
+                {
+                    Back(center - longAxis * (L / 2) - shortAxis * (S / 2)), Back(center + longAxis * (L / 2) - shortAxis * (S / 2)),
+                    Back(center + longAxis * (L / 2) + shortAxis * (S / 2)), Back(center - longAxis * (L / 2) + shortAxis * (S / 2)),
+                },
+                WidthPx = L / scale, HeightPx = S / scale, WidthMm = Lmm, HeightMm = Smm,
+                AngleDeg = Math.Atan2(longAxis.Y, longAxis.X) * 180 / Math.PI, Rectangularity = PolyArea(bestHull) / Math.Max(1.0, longLen * shortLen), Confidence = 1,
+            };
+        }
+        return null;
     }
 
     static PointD Up(PointD p, double scale) => new PointD(p.X / scale, p.Y / scale);
@@ -139,16 +218,10 @@ public static class CardDetector
     }
 
     // ---------- Maske ----------
-    static bool[] BuildMask(Raster img, double pxPerMm)
+    /// <summary>Sobel-Betrag (für Kanten).</summary>
+    static int[] Gradient(Raster img)
     {
         int w = img.Width, h = img.Height;
-        int ring = Math.Max(2, (int)(0.015 * Math.Min(w, h)));
-        var rs = new List<byte>(); var gs = new List<byte>(); var bs = new List<byte>();
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-                if (x < ring || y < ring || x >= w - ring || y >= h - ring) { img.Get(x, y, out var r, out var g, out var b); rs.Add(r); gs.Add(g); bs.Add(b); }
-        byte br = Median(rs), bg = Median(gs), bb = Median(bs);
-
         var gray = img.ToGray();
         var grad = new int[w * h];
         for (int y = 1; y < h - 1; y++)
@@ -159,7 +232,19 @@ public static class CardDetector
                 int gy = -gray[i - w - 1] - 2 * gray[i - w] - gray[i - w + 1] + gray[i + w - 1] + 2 * gray[i + w] + gray[i + w + 1];
                 grad[i] = (Math.Abs(gx) + Math.Abs(gy)) / 4;
             }
+        return grad;
+    }
 
+    /// <summary>Hintergrundmodell aus dem Scanrand: {R, G, B, Farbschwelle, Kantenschwelle}.</summary>
+    static double[] MakeModel(Raster img, int[] grad)
+    {
+        int w = img.Width, h = img.Height;
+        int ring = Math.Max(2, (int)(0.015 * Math.Min(w, h)));
+        var rs = new List<byte>(); var gs = new List<byte>(); var bs = new List<byte>();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (x < ring || y < ring || x >= w - ring || y >= h - ring) { img.Get(x, y, out var r, out var g, out var b); rs.Add(r); gs.Add(g); bs.Add(b); }
+        byte br = Median(rs), bg = Median(gs), bb = Median(bs);
         var ringDist = new List<byte>(); var ringGrad = new List<byte>();
         for (int y = 1; y < h - 1; y++)
             for (int x = 1; x < w - 1; x++)
@@ -169,19 +254,29 @@ public static class CardDetector
                     ringDist.Add((byte)Math.Max(Math.Abs(r - br), Math.Max(Math.Abs(g - bg), Math.Abs(b - bb))));
                     ringGrad.Add((byte)Math.Min(255, grad[y * w + x]));
                 }
-        double thr = Clamp(Median(ringDist) * 6 + 18, 22, 70);
-        double egThr = Clamp(Median(ringGrad) * 4 + 18, 24, 90);
+        return new double[] { br, bg, bb, Clamp(Median(ringDist) * 6 + 18, 22, 70), Clamp(Median(ringGrad) * 4 + 18, 24, 90) };
+    }
+
+    /// <param name="model">Hintergrundmodell; null = aus dem Rand von <paramref name="img"/> bestimmen (bei Ausschnitten das des ganzen Scans übergeben).</param>
+    static bool[] BuildMask(Raster img, double pxPerMm, double closeMm, double bandMm, double[]? model = null)
+    {
+        int w = img.Width, h = img.Height;
+        var grad = Gradient(img);
+        model ??= MakeModel(img, grad);
+        double br = model[0], bg = model[1], bb = model[2], thr = model[3], egThr = model[4];
 
         var mask = new bool[w * h];
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
                 img.Get(x, y, out var r, out var g, out var b);
-                int d = Math.Max(Math.Abs(r - br), Math.Max(Math.Abs(g - bg), Math.Abs(b - bb)));
+                double d = Math.Max(Math.Abs(r - br), Math.Max(Math.Abs(g - bg), Math.Abs(b - bb)));
                 mask[y * w + x] = d > thr || grad[y * w + x] > egThr;
             }
 
-        int rad = Math.Max(1, Math.Min(4, (int)Math.Round(0.6 * pxPerMm)));
+        int band = (int)Math.Round(bandMm * pxPerMm);
+        if (band > 0) for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (x < band || y < band || x >= w - band || y >= h - band) mask[y * w + x] = false;
+        int rad = Math.Max(1, (int)Math.Round(closeMm * pxPerMm));
         mask = Erode(Dilate(mask, w, h, rad), w, h, rad);   // Lücken in der Kontur schließen
         FillHoles(mask, w, h);
         mask = Dilate(Erode(mask, w, h, 1), w, h, 1);        // dünne Linien (Scanrand, Kratzer) entfernen
@@ -287,6 +382,13 @@ public static class CardDetector
     }
 
     // ---------- Geometrie ----------
+    static double PolyArea(List<PointD> h)
+    {
+        double a = 0;
+        for (int i = 0; i < h.Count; i++) { var p = h[i]; var q = h[(i + 1) % h.Count]; a += p.X * q.Y - q.X * p.Y; }
+        return Math.Abs(a) / 2;
+    }
+
     static List<PointD> ConvexHull(List<PointD> pts)
     {
         var p = pts.OrderBy(a => a.X).ThenBy(a => a.Y).ToList();

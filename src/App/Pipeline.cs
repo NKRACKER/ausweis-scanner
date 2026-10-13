@@ -29,6 +29,7 @@ sealed class ScanQuad
     public CardItem? Item;
     public bool Include;          // nur im Scan-Dialog: soll in die Liste
     public bool Manual;
+    public bool Dirty;            // Ecken von Hand verändert → Karte muss neu ausgeschnitten werden
 }
 
 /// <summary>Der volle Scan mit allen Rahmen – bleibt für die Ansicht „Gesamten Scan prüfen“ im Speicher, bis die Liste geleert wird.</summary>

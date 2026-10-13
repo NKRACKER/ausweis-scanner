@@ -48,4 +48,35 @@ public static class QuadTools
             Rectangularity = 1, Confidence = 1,
         };
     }
+
+    static PointD Unit(PointD a, PointD b) { double d = Dist(a, b); return d < 1e-9 ? new PointD(1, 0) : new PointD((b.X - a.X) / d, (b.Y - a.Y) / d); }
+    static double Dot(PointD a, PointD b) => a.X * b.X + a.Y * b.Y;
+
+    /// <summary>Ecke <paramref name="idx"/> an Punkt <paramref name="p"/> ziehen: die gegenüberliegende Ecke bleibt stehen, die Karte behält ihre Drehung und bleibt ein Rechteck.</summary>
+    public static PointD[] DragCorner(PointD[] q, int idx, PointD p, double minSize = 6)
+    {
+        var o = q[0]; var u = Unit(q[0], q[1]); var v = Unit(q[0], q[3]);
+        double W = Dist(q[0], q[1]), H = Dist(q[0], q[3]);
+        // Koordinaten (entlang u, entlang v) vom Ursprung q[0]; Ecken: 0=(0,0) 1=(W,0) 2=(W,H) 3=(0,H)
+        double[][] c = { new[] { 0.0, 0 }, new[] { W, 0 }, new[] { W, H }, new[] { 0.0, H } };
+        var opp = c[(idx + 2) % 4];
+        var d = new PointD(p.X - o.X, p.Y - o.Y);
+        double a = Dot(d, u), b = Dot(d, v);
+        if (Math.Abs(a - opp[0]) < minSize) a = opp[0] + (a >= opp[0] ? minSize : -minSize);
+        if (Math.Abs(b - opp[1]) < minSize) b = opp[1] + (b >= opp[1] ? minSize : -minSize);
+        double u0 = Math.Min(a, opp[0]), u1 = Math.Max(a, opp[0]), v0 = Math.Min(b, opp[1]), v1 = Math.Max(b, opp[1]);
+        PointD P(double x, double y) => new PointD(o.X + u.X * x + v.X * y, o.Y + u.Y * x + v.Y * y);
+        return new[] { P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1) };
+    }
+
+    /// <summary>Karte um ihre Mitte drehen, sodass Ecke <paramref name="idx"/> zum Punkt <paramref name="p"/> zeigt (Größe bleibt).</summary>
+    public static PointD[] RotateTo(PointD[] q, int idx, PointD p)
+    {
+        double cx = q.Average(t => t.X), cy = q.Average(t => t.Y);
+        double da = Math.Atan2(p.Y - cy, p.X - cx) - Math.Atan2(q[idx].Y - cy, q[idx].X - cx);
+        double cs = Math.Cos(da), sn = Math.Sin(da);
+        return q.Select(t => new PointD(cx + (t.X - cx) * cs - (t.Y - cy) * sn, cy + (t.X - cx) * sn + (t.Y - cy) * cs)).ToArray();
+    }
+
+    public static PointD[] Move(PointD[] q, double dx, double dy) => q.Select(t => new PointD(t.X + dx, t.Y + dy)).ToArray();
 }

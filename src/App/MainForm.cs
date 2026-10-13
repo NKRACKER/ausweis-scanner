@@ -384,11 +384,15 @@ sealed class MainForm : Form
     async Task OpenScanView(ScanInfo scan, string? note)
     {
         if (_busy) return;
-        using var f = new ScanViewForm(scan, note);
+        using var f = new ScanViewForm(scan, note, S.EdgeInsetMm);
         if (f.ShowDialog(this) != DialogResult.OK) { UpdateView(); return; }
         scan.Quads = f.Result;
         foreach (var q in scan.Quads.Where(q => !q.Include && q.Item != null).ToList())
         { var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null; }
+        // Ecken verändert → alte Kachel verwerfen, neu ausschneiden und lesen
+        foreach (var q in scan.Quads.Where(q => q.Include && q.Item != null && q.Dirty).ToList())
+        { var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null; }
+        foreach (var q in scan.Quads) q.Dirty = false;
         var add = scan.Quads.Where(q => q.Include && q.Item == null).ToList();
         if (add.Count > 0)
         {
@@ -556,9 +560,11 @@ sealed class MainForm : Form
         }
         if (_cards.Count > 0 && _cards[0].Item.Scan != null)
         {
-            using var sv = new ScanViewForm(_cards[0].Item.Scan!, null) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
+            using var sv = new ScanViewForm(_cards[0].Item.Scan!, null, S.EdgeInsetMm) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
             sv.Show(); await Task.Delay(500); Application.DoEvents();
             Snap(sv, baseName + "-scanview.png");
+            sv.DemoRegion(); await Task.Delay(300); Application.DoEvents();
+            Snap(sv, baseName + "-scanview-fit.png");
         }
         using var st = new SettingsForm(this, 0) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
         st.Show();
