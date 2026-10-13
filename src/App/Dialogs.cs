@@ -63,7 +63,7 @@ sealed class ProfileEditor : Form
     readonly ImagePanel _panel = new ImagePanel();
     readonly TextBox _name = new TextBox();
     readonly ComboBox _format = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList }, _orient = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-    readonly CheckBox _size = new CheckBox { Text = "Kartengröße (85,6 × 54 mm) beim Erkennen berücksichtigen", AutoSize = true };
+    readonly CheckBox _size = new CheckBox { Text = "Kartengröße (85,6 × 54 mm) berücksichtigen", AutoSize = true };
     readonly RadioButton _rName = new RadioButton { Text = "Name komplett (Vor- + Nachname im selben Feld)", Checked = true, AutoSize = true };
     readonly RadioButton _rLast = new RadioButton { Text = "Nur Nachname", AutoSize = true }, _rFirst = new RadioButton { Text = "Nur Vorname", AutoSize = true };
     readonly Label _result = new Label { AutoSize = false, Height = 60 };
@@ -74,9 +74,13 @@ sealed class ProfileEditor : Form
     {
         _card = card; _ocr = ocr; _p = existing ?? new Profile { Name = "Neues Design" };
         Icon = Theme.AppIcon; Text = "Ausweis-Design anlernen"; Size = new Size(1020, 640); StartPosition = FormStartPosition.CenterParent; MinimumSize = new Size(820, 520); Font = Theme.Font(9.5f);
-        var right = new Panel { Dock = DockStyle.Right, Width = 340, Padding = new Padding(10) };
+        // Rechte Seite: scrollbarer Bereich + feste Fußleiste, damit „Speichern“ auch auf kleinen/hochskalierten Bildschirmen erreichbar bleibt
+        var outer = new Panel { Dock = DockStyle.Right, Width = 340 };
+        var right = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(10) };
+        var foot = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = Theme.Surface };
+        outer.Controls.Add(right); outer.Controls.Add(foot);
         _panel.Dock = DockStyle.Fill; _panel.SetImage(BitmapCodec.ToBitmap(card));
-        Controls.Add(_panel); Controls.Add(right);
+        Controls.Add(_panel); Controls.Add(outer);
 
         int y = 6;
         Label L(string t, bool bold = false) { var l = new Label { Text = t, Left = 10, Top = y, Width = 316, AutoSize = false, Height = 20 }; if (bold) l.Font = new Font(Font, FontStyle.Bold); right.Controls.Add(l); y += 22; return l; }
@@ -92,9 +96,9 @@ sealed class ProfileEditor : Form
         _size.Checked = _p.CardWidthMm > 0; Add(_size, 20);
         var test = new Button { Text = "Testen: Name aus markierten Feldern lesen" }; test.Click += (_, __) => Test(); Add(test, 30);
         _result.Left = 10; _result.Top = y; _result.Width = 316; right.Controls.Add(_result); y += 66;
-        var ok = new Button { Text = "Speichern", DialogResult = DialogResult.None, Left = 10, Top = y, Width = 150, Height = 32 }; ok.Click += (_, __) => Save();
-        var cancel = new Button { Text = "Abbrechen", DialogResult = DialogResult.Cancel, Left = 176, Top = y, Width = 150, Height = 32 };
-        right.Controls.Add(ok); right.Controls.Add(cancel); CancelButton = cancel;
+        var ok = Theme.Primary("Speichern", 150, 34); ok.Location = new Point(10, 9); ok.Click += (_, __) => Save();
+        var cancel = Theme.Ghost("Abbrechen", 120, 34); cancel.Location = new Point(170, 9); cancel.DialogResult = DialogResult.Cancel;
+        foot.Controls.Add(ok); foot.Controls.Add(cancel); CancelButton = cancel;
 
         foreach (var f in _p.Fields) _panel.Fields.Add((f.Role, new RectangleF((float)f.X, (float)f.Y, (float)f.W, (float)f.H)));
         _panel.RegionSelected += r =>

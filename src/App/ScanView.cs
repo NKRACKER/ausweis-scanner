@@ -119,8 +119,8 @@ sealed class ScanViewForm : Form
         Size = new Size(1100, 860); MinimumSize = new Size(700, 520);
         _canvas = new ScanCanvas(scan) { Dock = DockStyle.Fill, Quads = scan.Quads.Select(q => new ScanQuad { Corners = q.Corners, Item = q.Item, Include = q.Item != null, Manual = q.Manual }).ToList() };
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Theme.Surface, Padding = new Padding(16, 8, 16, 4) };
-        _hint.Dock = DockStyle.Top; _hint.Height = 24; _hint.AutoEllipsis = true; _info.Dock = DockStyle.Top; _info.Height = 26; _info.AutoEllipsis = true;
+        var top = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Theme.Surface, Padding = new Padding(16, 8, 16, 4) };
+        _hint.Dock = DockStyle.Top; _hint.Height = 44; _info.Dock = DockStyle.Top; _info.Height = 26; _info.AutoEllipsis = true;
         top.Controls.Add(_hint); top.Controls.Add(_info);   // später hinzugefügt = zuerst angedockt → _info oben
         var bar = new Panel { Dock = DockStyle.Bottom, Height = 62, BackColor = Theme.Surface };
         bar.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };

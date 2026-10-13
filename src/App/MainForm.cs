@@ -24,7 +24,7 @@ sealed class MainForm : Form
     internal List<ScanDevice> Devices = new List<ScanDevice>(); ScanDevice? _device;
 
     readonly Label _title = new Label { Text = "Ausweis-Scanner", Font = Theme.Font(15f, true), ForeColor = Theme.Text, AutoSize = true, Anchor = AnchorStyles.Left, BackColor = Color.Transparent, UseMnemonic = false };
-    readonly Button _open = Theme.Ghost("Datei öffnen…", 120, 34), _settingsBtn = Theme.Ghost("⚙  Einstellungen", 150, 34);
+    readonly Button _open = Theme.Outline("Datei öffnen…", 130, 34), _settingsBtn = Theme.Ghost("⚙  Einstellungen", 150, 34);
     readonly Button _updateBtn = Theme.Primary("⬆  Update verfügbar", 230, 34, Theme.Ok);
     UpdateInfo? _update; readonly string? _postUpdate;
     // Hinweisleiste: eine kompakte, schließbare Zeile unter der Kopfzeile (schiebt den Inhalt nach unten, verdeckt nie etwas)
@@ -96,8 +96,8 @@ sealed class MainForm : Form
         header.Controls.Add(_title, 0, 0); header.Controls.Add(right, 1, 0);
 
         // Hinweisleiste
-        _notice.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _noticeAction.Visible = false; _noticeAction.Margin = new Padding(12, 0, 6, 0); _noticeClose.Margin = new Padding(0); _noticeClose.Anchor = AnchorStyles.Right;
+        _notice.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _noticeAction.Visible = false; _noticeAction.Margin = new Padding(12, 0, 6, 0); _noticeAction.Anchor = AnchorStyles.None; _noticeClose.Margin = new Padding(0); _noticeClose.Anchor = AnchorStyles.None;
         _notice.Controls.Add(_noticeText, 0, 0); _notice.Controls.Add(_noticeAction, 1, 0); _notice.Controls.Add(_noticeClose, 2, 0);
         _notice.SizeChanged += (_, __) => FitNoticeText();
         _noticeClose.Click += (_, __) => Notice("", false);
@@ -131,11 +131,12 @@ sealed class MainForm : Form
         // Fußleiste: Speicherort links, Status in der Mitte, großer Speichern-Knopf rechts
         _bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); _bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _bar.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, 0, _bar.Width, 0); };
-        var folder = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent, Margin = Padding.Empty };
-        var pathRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = Padding.Empty };
-        _barFolder.Margin = new Padding(0, 6, 0, 0); _changeFolder.Margin = new Padding(8, 0, 0, 0);
-        pathRow.Controls.Add(_barFolder); pathRow.Controls.Add(_changeFolder);
-        folder.Controls.Add(_barFolderCaption, 0, 0); folder.Controls.Add(pathRow, 0, 1);
+        var folder = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
+        var capRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = Padding.Empty };
+        _barFolderCaption.Margin = new Padding(0, 6, 4, 0); _changeFolder.Margin = new Padding(0); _changeFolder.MinimumSize = new Size(0, 24); _changeFolder.Height = 24; _changeFolder.Font = Theme.Font(9f); _changeFolder.ForeColor = Theme.Accent;
+        capRow.Controls.Add(_barFolderCaption); capRow.Controls.Add(_changeFolder);
+        _barFolder.Margin = new Padding(0, 0, 0, 0);
+        folder.Controls.Add(capRow, 0, 0); folder.Controls.Add(_barFolder, 0, 1);
         _save.Anchor = AnchorStyles.Right; _save.Margin = Padding.Empty;
         _bar.Controls.Add(folder, 0, 0); _bar.Controls.Add(_barStatus, 1, 0); _bar.Controls.Add(_save, 2, 0);
 
@@ -218,7 +219,7 @@ sealed class MainForm : Form
 
     Profile SelectedProfile => Profiles.FirstOrDefault(p => p.Name == S.ProfileName) ?? Profile.Auto();
 
-    static string ShortPath(string p) => p.Length <= 56 ? p : "…" + p.Substring(p.Length - 53);
+    static string ShortPath(string p) => p.Length <= 40 ? p : "…" + p.Substring(p.Length - 37);
 
     void UpdateView()
     {
