@@ -99,7 +99,7 @@ sealed class MainForm : Form
         _notice.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _noticeAction.Visible = false; _noticeAction.Margin = new Padding(12, 0, 6, 0); _noticeAction.Anchor = AnchorStyles.None; _noticeClose.Margin = new Padding(0); _noticeClose.Anchor = AnchorStyles.None;
         _notice.Controls.Add(_noticeText, 0, 0); _notice.Controls.Add(_noticeAction, 1, 0); _notice.Controls.Add(_noticeClose, 2, 0);
-        _notice.SizeChanged += (_, __) => FitNoticeText();
+        Resize += (_, __) => { if (_notice.Visible) FitNoticeText(); };
         _noticeClose.Click += (_, __) => Notice("", false);
         _noticeAction.Click += async (_, __) => { var sc = _noticeScan; if (sc != null) await OpenScanView(sc, null); };
 
@@ -148,8 +148,9 @@ sealed class MainForm : Form
 
     void FitNoticeText()
     {
-        int reserved = (_noticeAction.Visible ? _noticeAction.Width + 18 : 0) + _noticeClose.Width + _notice.Padding.Horizontal + 16;
-        _noticeText.MaximumSize = new Size(Math.Max(200, _notice.Width - reserved), 0);
+        // Basis ist die Fensterbreite (die Leiste selbst hat im unsichtbaren Zustand keine verlässliche Breite → Text wäre extrem hoch)
+        int reserved = (_noticeAction.Visible ? _noticeAction.Width + 18 : 0) + _noticeClose.Width + _notice.Padding.Horizontal + 24;
+        _noticeText.MaximumSize = new Size(Math.Max(200, ClientSize.Width - reserved), 0);
     }
 
     void Wire()
@@ -186,8 +187,8 @@ sealed class MainForm : Form
     void Notice(string text, bool show, ScanInfo? scan = null)
     {
         bool on = show && text.Length > 0;
-        _noticeText.Text = text; _noticeScan = on ? scan : null; _noticeAction.Visible = on && scan != null;
-        _notice.Visible = on; FitNoticeText();
+        _noticeScan = on ? scan : null; _noticeAction.Visible = on && scan != null;
+        FitNoticeText(); _noticeText.Text = text; _notice.Visible = on; _notice.PerformLayout();
     }
 
     /// <summary>Viele einzelne „Objekt bei x/y …“-Meldungen des Detektors zu einer Zeile zusammenfassen.</summary>
