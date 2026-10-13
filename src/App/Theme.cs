@@ -147,8 +147,9 @@ sealed class HelpButton : Control
 
     public HelpButton(string title, string text)
     {
-        _title = title; _text = text; Size = new Size(22, 22); Cursor = Cursors.Hand; TabStop = true; BackColor = Color.Transparent; Margin = new Padding(6, 0, 0, 0);
+        _title = title; _text = text;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        Size = new Size(22, 22); Cursor = Cursors.Hand; TabStop = true; BackColor = Color.Transparent; Margin = new Padding(6, 0, 0, 0);   // Stil zuerst: sonst lehnt BackColor=Transparent ab
         new ToolTip { InitialDelay = 400 }.SetToolTip(this, "Erklärung anzeigen");
     }
 

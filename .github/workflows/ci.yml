@@ -91,6 +91,7 @@ jobs:
           Remove-Item Env:\AUSWEIS_UI_SIZE
           Get-ChildItem -Filter crash-*.txt -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name) =="; Get-Content $_.FullName }
           Get-Item ui-*.png | Format-Table Name, Length
+          foreach ($f in 'ui-main.png','ui-empty.png','ui-main-s15.png','ui-main-narrow.png','ui-empty-narrow.png','ui-main-crop.png','ui-main-settings-0.png') { if (-not (Test-Path $f)) { throw "UI-Test hat $f nicht erzeugt (Absturz beim Start?)" } }
 
       - uses: actions/upload-artifact@v6
         if: always()
