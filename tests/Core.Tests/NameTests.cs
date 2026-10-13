@@ -118,4 +118,22 @@ public class MiniJsonAndProfileTests
         }
         finally { System.IO.File.Delete(f); }
     }
+
+    [Theory]
+    [InlineData("Schmidt")] [InlineData("Schulz")] [InlineData("Strauß")] [InlineData("Schwarzkopf")] [InlineData("Pfeiffer")] [InlineData("Wernstrunk")]
+    [InlineData("Anna-Maria")] [InlineData("Müller-Lüdenscheidt")] [InlineData("McDonald")] [InlineData("O'Brien")] [InlineData("Nguyen")] [InlineData("Krüger")]
+    public void RealNamesLookLikeWords(string name) => Assert.True(NameParser.WordLikeness(name) >= 0.7, name);
+
+    [Theory]
+    [InlineData("Etnqospqs")] [InlineData("Xqzbvkt")] [InlineData("Aaabbb")] [InlineData("Bcdfghklm")]
+    public void OcrGibberishDoesNotLookLikeAWord(string junk) => Assert.True(NameParser.WordLikeness(junk) < 0.7, junk);
+
+    [Fact]
+    public void GibberishNameIsNeverConfident()
+    {
+        var gibberish = NameParser.Plausibility(new ParsedName("Etnqospqs", "Löldsjeg"));
+        var real = NameParser.Plausibility(new ParsedName("Eickmann", "Mieke Kathrin"));
+        Assert.True(gibberish < 0.55, gibberish.ToString());   // unter der 0,7-Schwelle: UI zeigt „Bitte prüfen“
+        Assert.True(real >= 0.8, real.ToString());
+    }
 }

@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Core.Tests")]
+
 namespace AusweisScanner.Core;
 
 public sealed class NameCandidate
 {
     public ParsedName Name = new ParsedName();
     public double Score;
+    internal int Pass;   // Nummer des OCR-Durchlaufs (für die Abstimmung zwischen Durchläufen)
     /// <summary>"Profilfeld", "Beschriftung" oder "Schätzung" – wird dem Nutzer neben dem Vorschlag gezeigt.</summary>
     public string Source = "";
     public override string ToString() => $"{Name} [{Source} {Score:0.00}]";
@@ -26,13 +29,37 @@ public sealed class NameLocator
     public List<NameCandidate> Locate(Raster card, Profile profile)
     {
         var res = new List<NameCandidate>();
-        if (profile.Fields.Count > 0) res.AddRange(FromFields(card, profile));
+        if (profile.Fields.Count > 0)
+        {
+            var plain = FromFields(card, profile, false).ToList();
+            if (!plain.Any(c => c.Score >= 0.78))        // unsicher: zweiter Durchlauf mit aufbereitetem Bild, Abstimmung
+            {
+                var enh = FromFields(card, profile, true).ToList(); foreach (var c in enh) c.Pass = 1;
+                plain.AddRange(enh);
+            }
+            res.AddRange(Merge(plain));
+        }
         bool good = res.Any(c => c.Score >= 0.7);
         if (!good && (profile.UseAnchors || profile.UseHeuristic))
         {
-            var full = _ocr.Recognize(Prepare(card, 1400));
-            if (profile.UseAnchors) res.AddRange(FromAnchors(full, profile));
-            if (profile.UseHeuristic) res.AddRange(FromHeuristic(full, profile));
+            // Mehrere OCR-Durchläufe (normal, aufbereitet und stark vergrößert); stimmen mehrere überein, steigt die Sicherheit.
+            var all = new List<NameCandidate>(); var variants = new Func<Raster>[]
+            {
+                () => Prepare(card, 1400), () => Prepare(ImageEnhance.Normalize(card), 2000), () => Prepare(card, 2400),
+            };
+            for (int pass = 0; pass < variants.Length; pass++)
+            {
+                var full = _ocr.Recognize(variants[pass]());
+                var found = new List<NameCandidate>();
+                if (profile.UseAnchors) found.AddRange(FromAnchors(full, profile));
+                if (profile.UseHeuristic) found.AddRange(FromHeuristic(full, profile));
+                foreach (var c in found) c.Pass = pass;
+                all.AddRange(found);
+                var merged = Merge(all);
+                // früh aufhören: schon im ersten Durchlauf sehr sicher, oder zwei Durchläufe stimmen auf einem plausiblen Namen überein
+                if (merged.Count > 0 && (merged[0].Score >= 0.88 || (pass >= 1 && merged[0].Score >= 0.8 && all.Where(c => Similar(c.Name, merged[0].Name)).Select(c => c.Pass).Distinct().Count() >= 2))) break;
+            }
+            res.AddRange(Merge(all));
         }
         return res.GroupBy(c => (c.Name.Last.ToLowerInvariant(), c.Name.First.ToLowerInvariant()))
                   .Select(g => g.OrderByDescending(c => c.Score).First())
@@ -40,7 +67,7 @@ public sealed class NameLocator
     }
 
     // ---------- Stufe 1: Profilfelder ----------
-    IEnumerable<NameCandidate> FromFields(Raster card, Profile p)
+    IEnumerable<NameCandidate> FromFields(Raster card, Profile p, bool enhance)
     {
         string last = "", first = "", both = "";
         foreach (var f in p.Fields)
@@ -50,7 +77,7 @@ public sealed class NameLocator
             if (w < 8 || h < 8) continue;
             Raster crop;
             try { crop = card.Crop(x, y, w, h); } catch (ArgumentException) { continue; }
-            var text = _ocr.Recognize(Prepare(crop, 0, 110)).Text;
+            var text = _ocr.Recognize(Prepare(enhance ? ImageEnhance.Normalize(crop) : crop, 0, enhance ? 140 : 110)).Text;
             text = NameParser.StripLabels(text, f.Strip);
             if (f.Role == "last") last = (last + " " + text).Trim();
             else if (f.Role == "first") first = (first + " " + text).Trim();
@@ -66,6 +93,38 @@ public sealed class NameLocator
             var n = NameParser.Parse(both, p.Format);
             yield return new NameCandidate { Name = n, Score = 0.95 * NameParser.Plausibility(n, p.Stopwords), Source = "Profilfeld" };
         }
+    }
+
+    // ---------- Abstimmung zwischen Durchläufen ----------
+    static string Key(ParsedName n) => (n.Last + " " + n.First).ToLowerInvariant().Trim();
+
+    /// <summary>Gleicher Name bis auf eine verlesene Stelle (bei Namen ab 6 Zeichen)?</summary>
+    internal static bool Similar(ParsedName a, ParsedName b)
+    {
+        string x = Fold(Key(a)), y = Fold(Key(b));
+        return x == y || (Math.Min(x.Length, y.Length) >= 6 && Levenshtein(x, y) <= 1);
+    }
+
+    /// <summary>Typische OCR-Verwechslungen angleichen (rn↔m, cl↔d, vv↔w, i/l/1/|, 0↔o), damit „Eickrnann“ und „Eickmann“ als dieselbe Person gelten.</summary>
+    static string Fold(string s) => s.Replace("rn", "m").Replace("vv", "w").Replace("cl", "d").Replace('i', 'l').Replace('1', 'l').Replace('|', 'l').Replace('0', 'o').Replace('5', 's');
+
+    /// <summary>
+    /// Fasst Kandidaten mehrerer Durchläufe zusammen: gleiche (oder um 1 Zeichen abweichende) Namen bilden eine Gruppe; die Schreibweise mit dem besten Score gewinnt,
+    /// jeder weitere Durchlauf, der sie bestätigt, erhöht die Sicherheit.
+    /// </summary>
+    public static List<NameCandidate> Merge(IEnumerable<NameCandidate> all)
+    {
+        var clusters = new List<List<NameCandidate>>();
+        foreach (var c in all.OrderByDescending(c => c.Score))
+        {
+            var cl = clusters.FirstOrDefault(k => Similar(k[0].Name, c.Name));
+            if (cl == null) clusters.Add(new List<NameCandidate> { c }); else cl.Add(c);
+        }
+        return clusters.Select(k =>
+        {
+            int passes = k.Select(c => c.Pass).Distinct().Count();
+            return new NameCandidate { Name = k[0].Name, Source = k[0].Source, Pass = k[0].Pass, Score = Math.Min(0.99, k[0].Score + 0.07 * (passes - 1)) };
+        }).OrderByDescending(c => c.Score).ToList();
     }
 
     // ---------- Stufe 2: Beschriftungen ----------

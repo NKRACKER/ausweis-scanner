@@ -204,3 +204,43 @@ public class OrientationFallbackTests
         Assert.Equal(1, turns); Assert.Equal(new[] { 100, 100, 60 }, tried.ToArray());   // 0°, 180°, dann 90°
     }
 }
+
+public class EnsembleAndEnhanceTests
+{
+    static NameCandidate C(string last, string first, double score, int pass) => new NameCandidate { Name = new ParsedName(last, first), Score = score, Pass = pass, Source = "Beschriftung" };
+
+    [Fact]
+    public void Merge_ConfirmationFromSecondPassRaisesScore()
+    {
+        var m = NameLocator.Merge(new[] { C("Eickhoff", "Mieke", 0.81, 0), C("Eickhoff", "Mieke", 0.80, 1) });
+        Assert.Single(m); Assert.Equal("Eickhoff", m[0].Name.Last); Assert.InRange(m[0].Score, 0.87, 0.90);
+    }
+
+    [Fact]
+    public void Merge_OneCharacterMisreadJoinsClusterAndBestSpellingWins()
+    {
+        var m = NameLocator.Merge(new[] { C("Eickrnann", "Mieke", 0.62, 0), C("Eickmann", "Mieke", 0.81, 1), C("Eickmann", "Mieke", 0.80, 2) });
+        Assert.Single(m); Assert.Equal("Eickmann", m[0].Name.Last); Assert.True(m[0].Score > 0.9);
+    }
+
+    [Fact]
+    public void Merge_DifferentNamesStaySeparate_FirstPassWinsTies()
+    {
+        var m = NameLocator.Merge(new[] { C("Neumann", "Sophie", 0.81, 0), C("Naumann", "Sophia", 0.81, 1) });
+        Assert.Equal(2, m.Count); Assert.Equal("Neumann", m[0].Name.Last);
+    }
+
+    [Fact]
+    public void Normalize_FlattensShadingAndKeepsText()
+    {
+        // heller Hintergrund mit starkem Helligkeitsverlauf (Schatten links) und dunklem „Text“-Block
+        var r = new Raster(400, 250);
+        for (int y = 0; y < 250; y++) for (int x = 0; x < 400; x++) { byte v = (byte)(110 + x * 0.35); r.Set(x, y, v, v, v); }
+        for (int y = 100; y < 130; y++) for (int x = 150; x < 260; x++) r.Set(x, y, 20, 20, 20);
+        var n = ImageEnhance.Normalize(r);
+        byte Left() { n.Get(30, 30, out var a, out _, out _); return a; } byte Right() { n.Get(370, 30, out var a, out _, out _); return a; } byte Ink() { n.Get(200, 115, out var a, out _, out _); return a; }
+        Assert.InRange(Math.Abs(Left() - Right()), 0, 25);   // Verlauf ist weg
+        Assert.True(Left() > 180 && Right() > 180);          // Hintergrund hell
+        Assert.True(Ink() < 70);                              // Text bleibt dunkel
+    }
+}

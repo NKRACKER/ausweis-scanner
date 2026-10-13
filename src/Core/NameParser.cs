@@ -143,6 +143,31 @@ public static class NameParser
         return string.Join(" ", words);
     }
 
+    static readonly Regex GermanClusters = new Regex("tsch|sch|chs|ch|ck|ph|pf|tz|th|ß|ng|nk|qu", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// 0..1: wie „wortartig“ sieht ein Namensbestandteil aus? Erkennt typischen OCR-Buchstabensalat („Etnqospqs“): q ohne u, vier und mehr Konsonanten
+    /// hintereinander (nach Abzug üblicher Gruppen wie sch/tsch/ck/pf), dreifache Buchstaben, extremes Vokalverhältnis.
+    /// </summary>
+    public static double WordLikeness(string token)
+    {
+        var parts = token.Split(new[] { '-', '\'', '’' }, StringSplitOptions.RemoveEmptyEntries);   // Doppelnamen/Apostroph: Teile einzeln bewerten
+        if (parts.Length > 1) return parts.Min(WordLikeness);
+        var t = new string(token.Where(char.IsLetter).ToArray());
+        if (t.Length < 4) return 1.0;
+        double s = 1.0;
+        var simple = GermanClusters.Replace(t, "e");                       // übliche Konsonantengruppen wie ein Vokal behandeln
+        if (Regex.IsMatch(simple, "q(?!u)", RegexOptions.IgnoreCase)) s -= 0.5 * Regex.Matches(simple, "q(?!u)", RegexOptions.IgnoreCase).Count;
+        if (Regex.IsMatch(simple, "[bcdfghjklmnpqrstvwxz]{6,}", RegexOptions.IgnoreCase)) s -= 0.35;
+        if (Regex.IsMatch(t, "(.)\\1\\1")) s -= 0.4;
+        int vowels = simple.Count(c => "aeiouäöüyAEIOUÄÖÜY".IndexOf(c) >= 0);   // sch/ck/pf … zählen als Vokal-Ersatz → „Schmidt“, „Schulz“ nicht bestrafen
+        double vr = (double)vowels / simple.Length;
+        if (vr < 0.18 || vr > 0.75) s -= 0.3;
+        // Großbuchstaben mitten im Wort (nicht am Anfang, nicht durchgehend groß) deuten auf Verlesungen hin – außer Mc/De-Muster
+        if (!t.All(char.IsUpper) && t.Skip(2).Count(char.IsUpper) > 0 && !Regex.IsMatch(t, "^(Mc|Mac|De|Di|La|Le|O)[A-Z]")) s -= 0.2;
+        return Math.Max(0, s);
+    }
+
     /// <summary>0..1: wie plausibel ist das ein echter Personenname?</summary>
     public static double Plausibility(ParsedName n, IEnumerable<string>? extraStopwords = null)
     {
@@ -159,6 +184,7 @@ public static class NameParser
             if (letters < t.Length * 0.8) score -= 0.2;
             if (stop.Contains(t.Trim('-', '\''))) score *= 0.2;
             if (!Particles.Contains(t) && !char.IsUpper(t[0])) score -= 0.1;
+            if (!Particles.Contains(t)) score -= (1.0 - WordLikeness(t)) * 0.45;   // Buchstabensalat ist nie „sicher“
         }
         if (tokens.Length > 5) score *= 0.5;
         if (tokens.Length >= 2 && tokens.Length <= 4) score += 0.15;
