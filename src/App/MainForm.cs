@@ -337,7 +337,7 @@ sealed class MainForm : Form
         catch (OperationCanceledException) { Status("Scan abgebrochen."); }
         catch (Exception e) { MessageBox.Show(ScanBackends.Friendly(e) + "\n\nTipp: In den Einstellungen unter „Scanner“ den Hersteller-Dialog aktivieren – oder mit der Scanner-Software scannen und die Datei hier ins Fenster ziehen.", "Scan fehlgeschlagen", MessageBoxButtons.OK, MessageBoxIcon.Warning); Status("Scan fehlgeschlagen."); }
         finally { SetBusy(false); }
-        if (loaded != null) await ProcessRaster(loaded.Image, DeviceDpi(loaded));
+        if (loaded != null) await ProcessRaster(loaded.Image, DeviceDpi(loaded), "Scan " + DateTime.Now.ToString("HH:mm:ss"));
     }
 
     // Die angeforderte Auflösung ist verlässlicher als Metadaten; passt die Bildbreite nicht zu A4, wird die echte Auflösung berechnet.
@@ -356,11 +356,12 @@ sealed class MainForm : Form
             try { loaded = await Task.Run(() => BitmapCodec.LoadFile(f, problems)); }
             catch (Exception e) { Notice($"„{Path.GetFileName(f)}“ konnte nicht gelesen werden: {e.Message}", true); continue; }
             if (problems.Count > 0) Notice(string.Join(" ", problems), true);
-            foreach (var l in loaded) await ProcessRaster(l.Image, l.Dpi >= 100 && l.Dpi != 96 && l.Dpi != 72 ? l.Dpi : 0);
+            for (int pi = 0; pi < loaded.Count; pi++)
+            { var l = loaded[pi]; await ProcessRaster(l.Image, l.Dpi >= 100 && l.Dpi != 96 && l.Dpi != 72 ? l.Dpi : 0, loaded.Count > 1 ? $"{Path.GetFileName(f)} (Seite {pi + 1})" : Path.GetFileName(f)); }
         }
     }
 
-    async Task ProcessRaster(Raster scan, double dpi)
+    async Task ProcessRaster(Raster scan, double dpi, string name = "Scan")
     {
         if (_busy) return; SetBusy(true, "Suche Ausweise …");
         PipelineResult? res = null;
@@ -372,6 +373,7 @@ sealed class MainForm : Form
         catch (Exception e) { MessageBox.Show("Auswertung fehlgeschlagen:\n" + e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { SetBusy(false); }
         if (res == null) return;
+        if (res.Scan != null) res.Scan.Name = name;
         AddCards(res.Cards);
         var msg = Summarize(res.Warnings, out var hasObjects);
         Notice(msg, msg.Length > 0, hasObjects ? res.Scan : null);
@@ -387,10 +389,7 @@ sealed class MainForm : Form
     {
         var scans = _cards.Select(c => c.Item.Scan).Where(x => x != null).Distinct().Cast<ScanInfo>().ToList();
         if (scans.Count == 0) return;
-        if (scans.Count == 1) { await OpenScanView(scans[0], null); return; }
-        var m = new ContextMenuStrip { Font = Theme.Font(9.5f) };
-        for (int i = 0; i < scans.Count; i++) { var sc = scans[i]; m.Items.Add($"Scan {i + 1}  ({_cards.Count(c => c.Item.Scan == sc)} Ausweise)", null, async (_, __) => await OpenScanView(sc, null)); }
-        m.Show(_viewScan, new Point(0, _viewScan.Height));
+        await OpenScanView(scans, 0, null);   // bei mehreren Dateien: Blättern mit ◀ ▶ im Dialog
     }
 
     /// <summary>Große Ansicht eines Ausweises: Rahmen direkt dort anpassen (mit Lupe). Die Kachel wird danach an derselben Stelle neu ausgeschnitten.</summary>
@@ -410,13 +409,19 @@ sealed class MainForm : Form
         nc?.FocusLast();
     }
 
-    async Task OpenScanView(ScanInfo scan, string? note, CardItem? select = null)
+    Task OpenScanView(ScanInfo scan, string? note, CardItem? select = null)
+    {
+        var all = _cards.Select(c => c.Item.Scan).Where(x => x != null).Distinct().Cast<ScanInfo>().ToList();
+        if (!all.Contains(scan)) all.Insert(0, scan);   // z. B. frischer Scan ohne erkannte Ausweise
+        return OpenScanView(all, all.IndexOf(scan), note, select);
+    }
+
+    async Task OpenScanView(List<ScanInfo> scans, int start, string? note, CardItem? select = null)
     {
         if (_busy) return;
-        using var f = new ScanViewForm(scan, note, S.EdgeInsetMm, select);
+        using var f = new ScanViewForm(scans, start, note, S.EdgeInsetMm, select);
         if (f.ShowDialog(this) != DialogResult.OK) { UpdateView(); return; }
-        scan.Quads = f.Result;
-        await ApplyScanChanges(scan);
+        foreach (var (scan, quads) in f.Results.ToList()) { scan.Quads = quads; await ApplyScanChanges(scan); }
     }
 
     /// <summary>Stand der Rahmen (Include/Dirty/Removed) in die Kachelliste übernehmen.</summary>
@@ -617,6 +622,10 @@ sealed class MainForm : Form
             Snap(sv, baseName + "-scanview.png");
             sv.DemoRegion(); await Task.Delay(300); Application.DoEvents();
             Snap(sv, baseName + "-scanview-fit.png");
+            var second = new ScanInfo { Image = _cards[0].Item.Scan!.Image, Dpi = _cards[0].Item.Scan!.Dpi, Name = "zweite-datei.png" };   // Blättern zwischen mehreren Dateien
+            _cards[0].Item.Scan!.Name = "scan-seite-1.png";
+            using (var mv = new ScanViewForm(new[] { _cards[0].Item.Scan!, second }, 0, null, S.EdgeInsetMm) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) })
+            { mv.Show(); await Task.Delay(400); Application.DoEvents(); Snap(mv, baseName + "-scanview-multi.png"); }
             var q0 = _cards[0].Item.Scan!.Quads.First(q => q.Item == _cards[0].Item);
             using var ce = new CropEditorForm(_cards[0].Item.Scan!, q0.Corners, S.EdgeInsetMm) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
             ce.Show(); await Task.Delay(400); Application.DoEvents(); ce.DemoLoupe(); await Task.Delay(300); Application.DoEvents();

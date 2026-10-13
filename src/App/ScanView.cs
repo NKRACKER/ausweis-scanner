@@ -271,34 +271,63 @@ sealed class ScanCanvas : Control
 
 sealed class ScanViewForm : Form
 {
-    readonly ScanCanvas _canvas;
+    readonly List<ScanInfo> _scans; readonly Dictionary<ScanInfo, ScanCanvas> _canvases = new Dictionary<ScanInfo, ScanCanvas>();
+    readonly double _inset; readonly CardItem? _select; int _cur; ScanCanvas _canvas = null!;
     readonly Label _info = new Label { AutoSize = true, Font = Theme.Font(11f, true), ForeColor = Theme.Text, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left };
     readonly Label _hint = new Label { AutoSize = true, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left, Visible = false };
-    public List<ScanQuad> Result => _canvas.Quads;
-    readonly Button _delete = Theme.Ghost("🗑  Rahmen löschen", 170, 40);
+    readonly Button _delete = Theme.Ghost("🗑  Rahmen löschen", 170, 40), _prev = Theme.Outline("◀", 48, 40), _next = Theme.Outline("▶", 48, 40);
+    readonly Label _page = new Label { AutoSize = true, Font = Theme.Font(10f), ForeColor = Theme.Muted, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left, Margin = new Padding(8, 10, 0, 0) };
+    readonly string? _note;
+
+    /// <summary>Quadrate je Scan, den man angesehen hat (nur diese können sich geändert haben).</summary>
+    public IEnumerable<(ScanInfo scan, List<ScanQuad> quads)> Results => _scans.Where(s => _canvases.ContainsKey(s)).Select(s => (s, _canvases[s].Quads));
     internal void DemoRegion() => _canvas.DemoRegion();
 
-    public ScanViewForm(ScanInfo scan, string? note, double edgeInsetMm = 0.6, CardItem? select = null)
+    /// <param name="scans">Alle geladenen Scans/Dateien: bei mehreren blättert man mit ◀ ▶ durch (jeweils die ganze Datei).</param>
+    public ScanViewForm(IList<ScanInfo> scans, int start, string? note, double edgeInsetMm = 0.6, CardItem? select = null)
     {
+        _scans = scans.ToList(); _cur = Math.Max(0, Math.Min(start, _scans.Count - 1)); _inset = edgeInsetMm; _select = select; _note = note;
         Icon = Theme.AppIcon; Text = "Gesamter Scan"; BackColor = Theme.Surface; StartPosition = FormStartPosition.CenterParent; KeyPreview = true;
         Size = new Size(1100, 860); MinimumSize = new Size(640, 480);
-        _canvas = new ScanCanvas(scan, edgeInsetMm) { Dock = DockStyle.Fill, Quads = scan.Quads.Select(q => new ScanQuad { Corners = q.Corners, Item = q.Item, Include = q.Item != null, Manual = q.Manual, Dirty = false }).ToList() };
 
-        var top = Dialogs.TopBar(_info, _hint, Theme.Help("Gesamter Scan", "Grün = wird übernommen. Ein Klick auf einen Ausweis nimmt ihn heraus (grau) oder wieder hinein.\n\nNicht erkannt? Grob einen Rahmen darum ziehen – die Ecken werden automatisch gesucht.\n\nGewählten Ausweis anpassen: Eckpunkt ziehen ändert die Größe, die Mitte einer Kante verschiebt die ganze Kante, Strg + Eckpunkt dreht, im Ausweis ziehen verschiebt. Beim Ziehen zeigt eine Lupe die Stelle vergrößert.\n\nEntf oder Rechtsklick löscht einen Rahmen."));
+        var top = Dialogs.TopBar(_info, _hint, Theme.Help("Gesamter Scan", "Hier siehst du die ganze Datei mit allen erkannten Rahmen. Bei mehreren geladenen Dateien (oder PDF-Seiten) blätterst du mit ◀ ▶.\n\nGrün = wird übernommen. Ein Klick auf einen Ausweis nimmt ihn heraus (grau) oder wieder hinein.\n\nNicht erkannt? Grob einen Rahmen darum ziehen – die Ecken werden automatisch gesucht.\n\nGewählten Ausweis anpassen: Eckpunkt ziehen ändert die Größe, die Mitte einer Kante verschiebt die ganze Kante, Strg + Eckpunkt dreht, im Ausweis ziehen verschiebt. Beim Ziehen zeigt eine Lupe die Stelle vergrößert.\n\nEntf oder Rechtsklick löscht einen Rahmen."));
         var bar = Dialogs.BottomBar(out var ok, out var cancel, this, "Übernehmen", out var left);
-        _delete.ForeColor = Theme.Bad; _delete.Enabled = false; _delete.Margin = new Padding(0, 0, 0, 0);
+        _delete.ForeColor = Theme.Bad; _delete.Enabled = false; _delete.Margin = new Padding(0, 0, 14, 0);
         _delete.Click += (_, __) => _canvas.DeleteSelected();
         left.Controls.Add(_delete);
-        Controls.Add(_canvas); Controls.Add(top); Controls.Add(bar);
-
-        _canvas.Changed += () => { _delete.Enabled = _canvas.HasSelection; Idle(); };
+        if (_scans.Count > 1)
+        {
+            _prev.Margin = new Padding(0, 0, 4, 0); _next.Margin = new Padding(0); _prev.Click += (_, __) => Show(-1); _next.Click += (_, __) => Show(+1);
+            left.Controls.Add(_prev); left.Controls.Add(_next); left.Controls.Add(_page);
+        }
+        Controls.Add(top); Controls.Add(bar);
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Delete && _canvas.HasSelection) { _canvas.DeleteSelected(); e.Handled = true; } };
-        _canvas.Hint += h => { _hint.Text = h; _hint.Visible = h.Length > 0; };
-        _canvas.Resize += (_, __) => _canvas.Invalidate();
-        if (select != null) _canvas.SelectIndex(_canvas.Quads.FindIndex(q => q.Item == select));
+        ShowScan(_cur, _select);
         Theme.Fit(this);
         if (!string.IsNullOrEmpty(note)) { _hint.Text = note; _hint.Visible = true; }
-        Idle();
+    }
+
+    public ScanViewForm(ScanInfo scan, string? note, double edgeInsetMm = 0.6, CardItem? select = null) : this(new[] { scan }, 0, note, edgeInsetMm, select) { }
+
+    void Show(int delta) { ShowScan((_cur + delta + _scans.Count) % _scans.Count, null); }
+
+    void ShowScan(int idx, CardItem? select)
+    {
+        if (_canvas != null) Controls.Remove(_canvas);
+        _cur = idx; var scan = _scans[idx];
+        if (!_canvases.TryGetValue(scan, out var c))
+        {
+            c = new ScanCanvas(scan, _inset) { Dock = DockStyle.Fill, Quads = scan.Quads.Select(q => new ScanQuad { Corners = q.Corners, Item = q.Item, Include = q.Item != null, Manual = q.Manual, Dirty = false }).ToList() };
+            c.Changed += () => { if (c == _canvas) { _delete.Enabled = c.HasSelection; Idle(); } };
+            c.Hint += h => { _hint.Text = h; _hint.Visible = h.Length > 0; };
+            c.Resize += (_, __) => c.Invalidate();
+            if (select != null) c.SelectIndex(c.Quads.FindIndex(q => q.Item == select));
+            _canvases[scan] = c;
+        }
+        _canvas = c; Controls.Add(c); c.BringToFront(); Controls.SetChildIndex(c, 0);
+        _delete.Enabled = c.HasSelection;
+        if (_scans.Count > 1) { _page.Text = $"{idx + 1} / {_scans.Count}   ·   {scan.Name}"; Text = "Gesamter Scan – " + scan.Name; }
+        _hint.Visible = false; Idle();
     }
 
     void Idle()

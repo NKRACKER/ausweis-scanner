@@ -38,6 +38,7 @@ sealed class ScanInfo
 {
     public Raster Image = null!;
     public double Dpi = 300;
+    public string Name = "Scan";   // Dateiname bzw. Beschriftung (für das Blättern im Gesamtscan)
     public List<ScanQuad> Quads = new List<ScanQuad>();
 }
 
