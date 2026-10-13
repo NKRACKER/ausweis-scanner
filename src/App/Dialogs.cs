@@ -115,11 +115,16 @@ sealed class ProfileEditor : Form
     readonly ImagePanel _panel = new ImagePanel();
     readonly TextBox _name = new TextBox { Font = Theme.Font(10.5f) };
     readonly ComboBox _format = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList }, _orient = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-    readonly CheckBox _size = new CheckBox { Text = "Kartengröße 85,6 × 54 mm beachten", AutoSize = true };
+    readonly ComboBox _sizeSel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+    readonly NumericUpDown _sw = new NumericUpDown { Minimum = 30, Maximum = 160, DecimalPlaces = 1, Increment = 0.1M, Width = 78, Value = 85.6M }, _sh = new NumericUpDown { Minimum = 30, Maximum = 160, DecimalPlaces = 1, Increment = 0.1M, Width = 78, Value = 54.0M };
+    readonly CheckBox _copy = new CheckBox { Text = "Als neues Design speichern (Original bleibt)", AutoSize = true };
+    readonly bool _editing;
+    public bool SaveAsCopy => _editing && _copy.Checked;
     readonly RadioButton _rName = new RadioButton { Text = "Name komplett (Vor- + Nachname in einer Zeile)", Checked = true, AutoSize = true };
     readonly RadioButton _rLast = new RadioButton { Text = "Nur Nachname", AutoSize = true }, _rFirst = new RadioButton { Text = "Nur Vorname", AutoSize = true };
     readonly Label _result = new Label { AutoSize = true, MaximumSize = new Size(330, 0), ForeColor = Theme.Muted, UseMnemonic = false }, _nav = new Label { AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false };
     readonly Label _info = new Label { AutoSize = true, Font = Theme.Font(11f, true), ForeColor = Theme.Text, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left, Text = "Auf der Karte den Namen markieren" };
+    // (Titel wird für das Bearbeiten im Konstruktor angepasst)
     readonly Button _prev = Theme.Outline("◀", 44, 34), _next = Theme.Outline("▶", 44, 34);
     List<LayoutLine> _layout = new List<LayoutLine>();
     readonly Profile _p;
@@ -127,8 +132,8 @@ sealed class ProfileEditor : Form
 
     public ProfileEditor(IList<Raster> samples, IOcrEngine? ocr, Profile? existing)
     {
-        _samples = samples.ToList(); _ocr = ocr; _p = existing ?? new Profile { Name = "Neues Design" };
-        Icon = Theme.AppIcon; Text = "Ausweis-Design anlernen"; Size = new Size(1100, 720); StartPosition = FormStartPosition.CenterParent; MinimumSize = new Size(820, 560); Font = Theme.Font(9.5f); BackColor = Theme.Surface;
+        _samples = samples.ToList(); _ocr = ocr; _p = existing ?? new Profile { Name = "Neues Design" }; _editing = existing != null;
+        Icon = Theme.AppIcon; Text = _editing ? "Ausweis-Design bearbeiten" : "Ausweis-Design anlernen"; Size = new Size(1100, 720); StartPosition = FormStartPosition.CenterParent; MinimumSize = new Size(820, 560); Font = Theme.Font(9.5f); BackColor = Theme.Surface;
 
         var top = Dialogs.TopBar(_info, null, Theme.Help("Design anlernen", "1. Auf der Karte links die Zeile anklicken, in der der Name steht (gestrichelte Kästen = erkannter Text). Oder mit der Maus einen Rahmen um das Feld ziehen.\n\n2. „Automatisch vorschlagen“ erledigt das meist schon für dich.\n\n3. „An allen Beispielen testen“ zeigt, ob der Name auch auf den anderen Karten gelesen wird. Gib dafür mehrere Beispielkarten des gleichen Designs an (z. B. aus der Liste)."));
         var bar = Dialogs.BottomBar(out var ok, out var cancel, this, "Speichern", out _);
@@ -162,11 +167,19 @@ sealed class ProfileEditor : Form
         Add(_rName); Add(_rLast); Add(_rFirst);
         right.Controls.Add(Head("Name des Designs"));
         _name.Text = _p.Name; Add(_name);
+        if (_editing) { _info.Text = "Design bearbeiten: „" + _p.Name + "“"; Add(_copy); }
         right.Controls.Add(Head("Schreibweise", "Schreibweise auf der Karte", "Wie der Name auf der Karte steht. „Automatisch“ erkennt meist von selbst, ob zuerst der Nach- oder der Vorname kommt."));
         _format.Items.AddRange(new object[] { "automatisch erkennen", "Nachname, Vorname", "Vorname Nachname", "NACHNAME Vorname (ohne Komma)" }); _format.SelectedIndex = _p.Format == NameFormat.LastCommaFirst ? 1 : _p.Format == NameFormat.FirstLast ? 2 : _p.Format == NameFormat.LastFirst ? 3 : 0; Add(_format);
         right.Controls.Add(Head("Textrichtung"));
         _orient.Items.AddRange(new object[] { "Querformat (normal)", "Hochformat (Text steht aufrecht)" }); _orient.SelectedIndex = _p.Orientation == "portrait" ? 1 : 0; Add(_orient);
-        _size.Checked = _p.CardWidthMm > 0; Add(_size);
+        right.Controls.Add(Head("Kartengröße", "Kartengröße", "„Wie in den Einstellungen“ nutzt die allgemeine Kartengröße (Einstellungen → Ausweis-Design) und ist für die meisten Designs richtig.\n\nMit eigener Größe für dieses Design wird der Rahmen exakt darauf eingepasst; Karten, die mehr als 20 % abweichen, werden mit diesem Design ignoriert."));
+        _sizeSel.Items.AddRange(new object[] { "Wie in den Einstellungen (empfohlen)", "Scheckkarte 85,6 × 54 mm", "Eigene Maße" });
+        bool id1 = Math.Abs(_p.CardWidthMm - CardSizes.Id1Width) < 0.05 && Math.Abs(_p.CardHeightMm - CardSizes.Id1Height) < 0.05;
+        _sizeSel.SelectedIndex = _p.CardWidthMm <= 0 ? 0 : id1 ? 1 : 2; if (_p.CardWidthMm > 0 && !id1) { _sw.Value = (decimal)Math.Max(30, Math.Min(160, _p.CardWidthMm)); _sh.Value = (decimal)Math.Max(30, Math.Min(160, _p.CardHeightMm)); }
+        Add(_sizeSel);
+        var dims = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 6) };
+        _sw.Margin = new Padding(0, 0, 4, 0); _sh.Margin = new Padding(4, 0, 4, 0); dims.Controls.Add(_sw); dims.Controls.Add(new Label { Text = "×", AutoSize = true, Margin = new Padding(0, 4, 0, 0) }); dims.Controls.Add(_sh); dims.Controls.Add(new Label { Text = "mm", AutoSize = true, Margin = new Padding(2, 4, 0, 0) });
+        right.Controls.Add(dims); _sizeSel.SelectedIndexChanged += (_, __) => dims.Visible = _sizeSel.SelectedIndex == 2; dims.Visible = _sizeSel.SelectedIndex == 2;
         var test = Theme.Outline("An allen Beispielen testen", 300, 36); test.Click += async (_, __) => await TestAll(); test.Margin = new Padding(0, 10, 0, 4); right.Controls.Add(test);
         right.Controls.Add(_result);
 
@@ -236,7 +249,8 @@ sealed class ProfileEditor : Form
             Format = new[] { NameFormat.Auto, NameFormat.LastCommaFirst, NameFormat.FirstLast, NameFormat.LastFirst }[Math.Max(0, _format.SelectedIndex)],
             Orientation = _orient.SelectedIndex == 1 ? "portrait" : "landscape",
         };
-        if (_size.Checked) { p.CardWidthMm = 85.6; p.CardHeightMm = 54; }
+        if (_sizeSel.SelectedIndex == 1) { p.CardWidthMm = CardSizes.Id1Width; p.CardHeightMm = CardSizes.Id1Height; }
+        else if (_sizeSel.SelectedIndex == 2) { p.CardWidthMm = (double)_sw.Value; p.CardHeightMm = (double)_sh.Value; }
         foreach (var f in _panel.Fields) p.Fields.Add(new FieldRegion { Role = f.role, X = Math.Round(f.frac.X, 4), Y = Math.Round(f.frac.Y, 4), W = Math.Round(f.frac.Width, 4), H = Math.Round(f.frac.Height, 4) });
         return p;
     }

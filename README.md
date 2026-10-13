@@ -45,6 +45,10 @@ Das Tool braucht kein festes Layout. Die Namenssuche läuft in drei Stufen, jewe
 
 Die Auswahl **„Automatisch“** probiert alle gespeicherten Designs durch und merkt sich das passende. Passt kein Profil, fällt es auf Stufe 2/3 zurück – es endet also nie bei „leer“, und von Hand eintippen geht immer.
 
+**Kartengröße:** Einstellungen → *Ausweis-Design* → *Kartengröße*. Standard ist die Scheckkarte (85,6 × 54 mm). Passt eine erkannte Karte zu dieser Größe, rastet der Rahmen exakt darauf ein (Scanner-Schatten wird abgeschnitten, die Lage ergibt sich aus den sicher gefundenen Kanten); abweichende Karten werden normal erkannt. Bei anderen Ausweisen „Eigene Maße“ eintragen oder per „Aus erkannten Ausweisen messen“ übernehmen. Ein einzelnes Design kann im Editor eine eigene Größe bekommen.
+
+**Design bearbeiten:** In der Liste der angelernten Designs auf „Bearbeiten…“ (oder Doppelklick). Umbenennen ist möglich; mit „Als neues Design speichern“ bleibt das Original erhalten.
+
 **Neues Design anlernen:** Einstellungen → *Ausweis-Design* → `Neues Design anlernen…`. Als Beispiele dienen die schon erkannten Ausweise der Liste (oder eine Datei). Das Programm zeigt den erkannten Text als anklickbare Kästen; ein Klick auf die Namenszeile markiert sie, oder man zieht einen Rahmen. `Automatisch vorschlagen` erledigt das meist schon selbst, `An allen Beispielen testen` prüft das Design auf allen Beispielkarten. Das Design liegt als JSON im Ordner `profile` (neben der `.exe` in `Ausweis-Scanner-Daten`, sonst unter `%LOCALAPPDATA%\Ausweis-Scanner`) und kann von Hand bearbeitet oder zwischen Rechnern kopiert werden:
 
 ```json

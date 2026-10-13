@@ -16,7 +16,8 @@ public static class EdgeRefiner
     public static double InMm = 2.5, OutMm = 3.0, SigmaMm = 1.2;
 
     /// <returns>true, wenn mindestens eine Kante verfeinert wurde.</returns>
-    public static bool Refine(byte[] g, int w, int h, ref PointD center, ref PointD la, ref PointD sa, ref double longLen, ref double shortLen, double ppm)
+    public static bool Refine(byte[] g, int w, int h, ref PointD center, ref PointD la, ref PointD sa, ref double longLen, ref double shortLen, double ppm,
+                              (double l, double s) snap = default, double snapTolPx = 0)
     {
         double inMm = InMm, outMm = OutMm;
         // Kanten: 0 = +la (rechts), 1 = -la (links), 2 = +sa (unten), 3 = -sa (oben)
@@ -83,11 +84,31 @@ public static class EdgeRefiner
             double cs = Math.Cos(delta), sn = Math.Sin(delta);
             var nla = la * cs + sa * sn; var nsa = la * (-sn) + sa * cs; la = nla; sa = nsa;
         }
+        // Bekannte Kartengröße: passt die Messung dazu, wird exakt eingerastet. Die Lage folgt den sicher gefundenen Kanten (beide: Mitte, eine: von dieser Kante aus).
+        if (snap.l > 0 && snap.s > 0 && snapTolPx > 0
+            && TrySnapAxis(longLen, snap.l, snapTolPx, ok[0], a[0], ok[1], a[1], out double sl) && TrySnapAxis(shortLen, snap.s, snapTolPx, ok[2], a[2], ok[3], a[3], out double ss))
+        {
+            longLen = snap.l; shortLen = snap.s;
+            center = center + la * sl + sa * ss;
+            return true;
+        }
         // Lage: Mittelpunkt und Größe aus den Kantenabständen
         double dl = (ok[0] ? a[0] : 0) - (ok[1] ? a[1] : 0), ds2 = (ok[2] ? a[2] : 0) - (ok[3] ? a[3] : 0);
         longLen += (ok[0] ? a[0] : 0) + (ok[1] ? a[1] : 0); shortLen += (ok[2] ? a[2] : 0) + (ok[3] ? a[3] : 0);
         center = center + la * (dl / 2) + sa * (ds2 / 2);
         return true;
+    }
+
+    /// <summary>Passt die gemessene Länge zur bekannten Größe? Liefert die nötige Mittelpunktsverschiebung entlang der Achse.</summary>
+    static bool TrySnapAxis(double len, double exact, double tol, bool okA, double aA, bool okB, double aB, out double shift)
+    {
+        shift = 0;
+        double eA = len / 2 + (okA ? aA : 0), eB = len / 2 + (okB ? aB : 0), size = eA + eB;
+        if (okA && okB) { if (Math.Abs(size - exact) > tol) return false; shift = (eA - eB) / 2; return true; }
+        if (Math.Abs(len - exact) > 2 * tol) return false;       // nur grobe Größe bekannt → großzügiger prüfen
+        if (okA) { shift = eA - exact / 2; return true; }
+        if (okB) { shift = exact / 2 - eB; return true; }
+        return true;                                              // keine verlässliche Kante: grobe Mitte beibehalten
     }
 
     static double Median(List<double> v) { v.Sort(); int c = v.Count; return c == 0 ? 0 : c % 2 == 1 ? v[c / 2] : (v[c / 2 - 1] + v[c / 2]) / 2; }

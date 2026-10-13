@@ -37,6 +37,8 @@ public sealed class Profile
     /// <summary>Zusätzliche Wörter, die NIE Teil eines Namens sind (Schulname, "Schülerausweis" …).</summary>
     public List<string> Stopwords = new List<string>();
     public bool UseAnchors = true, UseHeuristic = true;
+    /// <summary>Datei, aus der das Design geladen wurde (nicht gespeichert) – zum Bearbeiten/Umbenennen.</summary>
+    public string FilePath = "";
 
     public override string ToString() => Name;   // Anzeige in Auswahllisten
 
@@ -96,7 +98,7 @@ public static class ProfileStore
         {
             try
             {
-                var p = Profile.FromJson(File.ReadAllText(f));
+                var p = Profile.FromJson(File.ReadAllText(f)); p.FilePath = f;
                 list.RemoveAll(x => string.Equals(x.Name, p.Name, StringComparison.OrdinalIgnoreCase));
                 list.Add(p);
             }

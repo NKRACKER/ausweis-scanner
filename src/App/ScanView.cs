@@ -267,7 +267,7 @@ sealed class ScanCanvas : Control
         var old = Cursor; Cursor = Cursors.WaitCursor;
         try
         {
-            var fit = CardDetector.FitCard(_scan.Image, roi, new DetectorOptions { Dpi = _scan.Dpi, EdgeInsetMm = _insetMm });
+            var fit = CardDetector.FitCard(_scan.Image, roi, _scan.Options(_insetMm));
             if (fit != null) { corners = fit.Corners; found = true; }
             else corners = QuadTools.Normalize(new[] { new PointD(roi.X, roi.Y), new PointD(roi.Right, roi.Y), new PointD(roi.Right, roi.Bottom), new PointD(roi.X, roi.Bottom) });
         }
@@ -390,7 +390,7 @@ sealed class CropEditorForm : Form
         var old = Cursor; Cursor = Cursors.WaitCursor;
         try
         {
-            var fit = CardDetector.FitCard(_scan.Image, roi, new DetectorOptions { Dpi = _scan.Dpi, EdgeInsetMm = _inset });
+            var fit = CardDetector.FitCard(_scan.Image, roi, _scan.Options(_inset));
             if (fit != null) _canvas.SetCorners(0, fit.Corners);
             else MessageBox.Show(this, "Hier konnte die Karte nicht automatisch gefunden werden. Bitte die Eckpunkte von Hand ziehen.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }

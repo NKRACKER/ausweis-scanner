@@ -29,6 +29,11 @@ public sealed class DetectorOptions
     public double BorderBandMm = 1.0;
     /// <summary>Kanten in voller Auflösung nachbessern (robuste Geradenanpassung, kleine Winkelkorrektur).</summary>
     public bool RefineEdges = true;
+    /// <summary>
+    /// Bekannte Kartengröße (mm, 0 = unbekannt): passt die erkannte Karte dazu (±<see cref="SnapTolMm"/>), wird der Rahmen exakt auf diese Größe eingerastet –
+    /// die Lage ergibt sich aus den sicher gefundenen Kanten. Karten anderer Größe werden normal erkannt (anders als <see cref="ExpectedWidthMm"/> filtert das nicht).
+    /// </summary>
+    public double SnapWidthMm = 0, SnapHeightMm = 0, SnapTolMm = 2.2;
 }
 
 public sealed class DetectedCard
@@ -126,7 +131,7 @@ public static class CardDetector
             // in volle Auflösung wechseln und die Kanten dort verfeinern
             var cF = Up(center, scale); double LF = longLen / scale, SF = shortLen / scale, ppmF = opt.Dpi / 25.4;
             var laF = longAxis; var saF = shortAxis;
-            if (fullGray != null) EdgeRefiner.Refine(fullGray, scan.Width, scan.Height, ref cF, ref laF, ref saF, ref LF, ref SF, ppmF);
+            if (fullGray != null) EdgeRefiner.Refine(fullGray, scan.Width, scan.Height, ref cF, ref laF, ref saF, ref LF, ref SF, ppmF, SnapPx(opt, ppmF), opt.SnapTolMm * ppmF);
             double insetF = opt.EdgeInsetMm * ppmF, L = LF - 2 * insetF, S = SF - 2 * insetF;
             var card = new DetectedCard
             {
@@ -196,7 +201,7 @@ public static class CardDetector
             PointD Back(PointD p) => new PointD((p.X + x0) / scale, (p.Y + y0) / scale);
             var cF = Back(center); double LF = longLen / scale, SF = shortLen / scale, ppmF = opt.Dpi / 25.4;
             var laF = longAxis; var saF = shortAxis;
-            if (opt.RefineEdges) EdgeRefiner.Refine(fullGrayFit ??= scan.ToGray(), scan.Width, scan.Height, ref cF, ref laF, ref saF, ref LF, ref SF, ppmF);
+            if (opt.RefineEdges) EdgeRefiner.Refine(fullGrayFit ??= scan.ToGray(), scan.Width, scan.Height, ref cF, ref laF, ref saF, ref LF, ref SF, ppmF, SnapPx(opt, ppmF), opt.SnapTolMm * ppmF);
             double insetF = opt.EdgeInsetMm * ppmF, L = LF - 2 * insetF, S = SF - 2 * insetF;
             return new DetectedCard
             {
@@ -211,6 +216,9 @@ public static class CardDetector
         }
         return null;
     }
+
+    /// <summary>Bekannte Größe in Pixeln als (lang, kurz); (0, 0) = keine Vorgabe.</summary>
+    static (double l, double s) SnapPx(DetectorOptions o, double ppm) => o.SnapWidthMm > 0 && o.SnapHeightMm > 0 ? (Math.Max(o.SnapWidthMm, o.SnapHeightMm) * ppm, Math.Min(o.SnapWidthMm, o.SnapHeightMm) * ppm) : (0, 0);
 
     static PointD Up(PointD p, double scale) => new PointD(p.X / scale, p.Y / scale);
 

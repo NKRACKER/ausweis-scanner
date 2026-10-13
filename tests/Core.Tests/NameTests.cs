@@ -136,4 +136,16 @@ public class MiniJsonAndProfileTests
         Assert.True(gibberish < 0.55, gibberish.ToString());   // unter der 0,7-Schwelle: UI zeigt „Bitte prüfen“
         Assert.True(real >= 0.8, real.ToString());
     }
+
+    [Fact]
+    public void CardSizeResolution_DesignWinsOverGlobalSetting()
+    {
+        var s = new Settings();
+        Assert.True(CardSizes.TryResolve(s, null, out var w, out var h)); Assert.Equal(85.6, w); Assert.Equal(54.0, h);                 // Standard: Scheckkarte
+        s.CardSizeMode = "auto"; Assert.False(CardSizes.TryResolve(s, null, out _, out _));
+        s.CardSizeMode = "custom"; s.CardWidthMm = 100; s.CardHeightMm = 70; Assert.True(CardSizes.TryResolve(s, null, out w, out h)); Assert.Equal(100, w);
+        Assert.True(CardSizes.TryResolve(s, new Profile { CardWidthMm = 90, CardHeightMm = 60 }, out w, out h)); Assert.Equal(90, w); Assert.Equal(60, h);
+        var back = Settings.FromDict((System.Collections.Generic.IDictionary<string, object?>)MiniJson.Parse(MiniJson.Write(s.ToDict()))!);
+        Assert.Equal("custom", back.CardSizeMode); Assert.Equal(70, back.CardHeightMm);
+    }
 }

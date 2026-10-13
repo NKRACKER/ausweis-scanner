@@ -161,4 +161,29 @@ public class CardDetectorTests
         Assert.InRange(w, 85.6 - 0.6, 85.6 + 0.6); Assert.InRange(h, 54.0 - 0.6, 54.0 + 0.6);
         Assert.InRange(Math.Abs(((res.Cards[0].AngleDeg - angle + 540) % 360) - 180), 0, 0.8);   // Winkel auf <1° genau
     }
+
+    [Theory]
+    [InlineData(20, 300, 0)]
+    [InlineData(235, 300, 17)]
+    [InlineData(235, 150, -23)]
+    public void KnownCardSize_SnapsFrameExactlyAndCentersIt(int lid, int dpi, double angle)
+    {
+        var scan = Make(new[] { new Card { CxMm = 100, CyMm = 120, AngleDeg = angle } }, lid: (byte)lid, dpi: dpi);
+        var res = CardDetector.Detect(scan, new DetectorOptions { Dpi = dpi, EdgeInsetMm = 0, SnapWidthMm = 85.6, SnapHeightMm = 54.0 });
+        Assert.Single(res.Cards);
+        double px = dpi / 25.4, w = res.Cards[0].WidthPx / px, h = res.Cards[0].HeightPx / px;
+        Assert.InRange(w, 85.55, 85.65); Assert.InRange(h, 53.95, 54.05);                                  // exakt
+        var c = res.Cards[0].Corners; double cx = c.Average(p => p.X) / px, cy = c.Average(p => p.Y) / px;
+        Assert.InRange(cx, 99.6, 100.4); Assert.InRange(cy, 119.6, 120.4);                                  // mittig auf der echten Karte
+    }
+
+    [Fact]
+    public void KnownCardSize_DoesNotForceOtherFormats()
+    {
+        var scan = Make(new[] { new Card { CxMm = 100, CyMm = 120, AngleDeg = 9, WMm = 105, HMm = 74 } }, lid: 20, dpi: 200);   // A7-Karte, kein Scheckkartenformat
+        var res = CardDetector.Detect(scan, new DetectorOptions { Dpi = 200, EdgeInsetMm = 0, SnapWidthMm = 85.6, SnapHeightMm = 54.0 });
+        Assert.Single(res.Cards);
+        double px = 200 / 25.4;
+        Assert.InRange(res.Cards[0].WidthPx / px, 104.0, 106.0); Assert.InRange(res.Cards[0].HeightPx / px, 73.0, 75.0);
+    }
 }

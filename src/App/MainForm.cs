@@ -541,7 +541,26 @@ sealed class MainForm : Form
     }
 
     // ------------------------------------------------------------------ Design anlernen (aus den Einstellungen aufgerufen)
-    internal void TeachDesign(IWin32Window owner)
+    /// <summary>Mittlere Kartengröße der gerade geladenen Scans (ohne Einrasten gemessen) – für „aus erkannten Ausweisen messen“.</summary>
+    internal async Task<(double w, double h, int n)?> MeasureCardSize()
+    {
+        var scans = _cards.Select(c => c.Item.Scan).Where(x => x != null).Distinct().Cast<ScanInfo>().Take(3).ToList();
+        if (scans.Count == 0) return null;
+        var sizes = await Task.Run(() =>
+        {
+            var l = new List<(double lo, double sh)>();
+            foreach (var sc in scans)
+                foreach (var c in CardDetector.Detect(sc.Image, new DetectorOptions { Dpi = sc.Dpi, EdgeInsetMm = 0 }).Cards)
+                { double ppm = sc.Dpi / 25.4; l.Add((Math.Max(c.WidthPx, c.HeightPx) / ppm, Math.Min(c.WidthPx, c.HeightPx) / ppm)); }
+            return l;
+        });
+        if (sizes.Count < 2) return null;
+        double Med(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToList(); return a.Count % 2 == 1 ? a[a.Count / 2] : (a[a.Count / 2 - 1] + a[a.Count / 2]) / 2; }
+        return (Math.Round(Med(sizes.Select(x => x.lo)), 1), Math.Round(Med(sizes.Select(x => x.sh)), 1), sizes.Count);
+    }
+
+    /// <summary>Neues Design anlernen – oder ein vorhandenes bearbeiten (<paramref name="existing"/>), umbenennen oder als Kopie speichern.</summary>
+    internal void TeachDesign(IWin32Window owner, Profile? existing = null)
     {
         // Beispielkarten: die schon erkannten Ausweise der Liste (bis 8 – je mehr, desto besser lässt sich das Design prüfen); sonst eine Datei wählen
         var samples = _cards.Take(8).Select(c => c.Item.Image).ToList();
@@ -554,7 +573,7 @@ sealed class MainForm : Form
                 foreach (var fn in d.FileNames.Take(8))
                 {
                     var l = BitmapCodec.LoadFile(fn)[0];
-                    var det = CardDetector.Detect(l.Image, new DetectorOptions { Dpi = l.Dpi >= 100 && l.Dpi != 96 ? l.Dpi : Math.Max(100, Pipeline.EstimateDpiFromPage(l.Image)) });
+                    var det = CardDetector.Detect(l.Image, new DetectorOptions { Dpi = l.Dpi >= 100 && l.Dpi != 96 ? l.Dpi : Math.Max(100, Pipeline.EstimateDpiFromPage(l.Image)), EdgeInsetMm = S.EdgeInsetMm });
                     if (det.Cards.Count > 0) foreach (var dc in det.Cards.Take(8 - samples.Count)) samples.Add(CardExtractor.Extract(l.Image, dc));   // mehrere Karten in einem Scan → alle als Beispiele
                     else samples.Add(l.Image);                                                                                                         // kein Rahmen erkannt → Bild gilt als Karte
                     if (samples.Count >= 8) break;
@@ -562,9 +581,18 @@ sealed class MainForm : Form
             }
             catch (Exception e) { MessageBox.Show("Bild konnte nicht gelesen werden: " + e.Message, Text); return; }
         }
-        using var ed = new ProfileEditor(samples, _ocr, null);
+        using var ed = new ProfileEditor(samples, _ocr, existing);
         if (ed.ShowDialog(owner) != DialogResult.OK || ed.Result == null) return;
-        try { ProfileStore.Save(Paths.ProfilesDir, ed.Result); ReloadProfiles(ed.Result.Name); }
+        try
+        {
+            var res = ed.Result; bool copy = existing != null && ed.SaveAsCopy;
+            // nie ein anderes Design überschreiben: bei Namensgleichheit (neu/Kopie) hochzählen
+            bool Taken(string n) => Profiles.Any(p => string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase) && !(existing != null && !copy && ReferenceEquals(p, existing)));
+            if (Taken(res.Name)) { var b = copy && string.Equals(res.Name, existing!.Name, StringComparison.OrdinalIgnoreCase) ? res.Name + " (Kopie)" : res.Name; var n = b; for (int i = 2; Taken(n); i++) n = b + " (" + i + ")"; res.Name = n; }
+            var path = ProfileStore.Save(Paths.ProfilesDir, res);
+            if (existing != null && !copy && existing.FilePath.Length > 0 && !string.Equals(Path.GetFullPath(existing.FilePath), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase) && File.Exists(existing.FilePath)) File.Delete(existing.FilePath);   // umbenannt: alte Datei weg
+            ReloadProfiles(res.Name);
+        }
         catch (Exception e) { MessageBox.Show("Design konnte nicht gespeichert werden: " + e.Message, Text); }
     }
 

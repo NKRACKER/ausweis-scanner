@@ -31,6 +31,9 @@ sealed class SettingsForm : Form
     // Design
     readonly ComboBox _profile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     readonly ListBox _designs = new ListBox { Height = 110, IntegralHeight = false, BorderStyle = BorderStyle.FixedSingle };
+    readonly ComboBox _sizeMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly NumericUpDown _sizeW = new NumericUpDown { Minimum = 30, Maximum = 160, DecimalPlaces = 1, Increment = 0.1M, Width = 80 }, _sizeH = new NumericUpDown { Minimum = 30, Maximum = 160, DecimalPlaces = 1, Increment = 0.1M, Width = 80 };
+    readonly Label _sizeMsg = new Label { AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false, MaximumSize = new Size(560, 0) };
     // Erweitert
     readonly NumericUpDown _q = new NumericUpDown { Minimum = 50, Maximum = 100, Width = 80 }, _inset = new NumericUpDown { Minimum = 0, Maximum = 3, DecimalPlaces = 1, Increment = 0.1M, Width = 80 };
     readonly TextBox _watch = Theme.Field(380);
@@ -152,6 +155,29 @@ sealed class SettingsForm : Form
         foreach (var pr in _m.Profiles) _profile.Items.Add(pr.Name == "Automatisch" ? "Automatisch (empfohlen)" : pr.Name);
         _profile.SelectedIndex = Math.Max(0, _m.Profiles.FindIndex(x => x.Name == _s.ProfileName)); FillDesigns();
         var add = Theme.Outline("Neues Design anlernen…", 210, 34); add.Click += (_, __) => { _m.TeachDesign(this); RefreshProfileLists(); };
+        var edit = Theme.Outline("Bearbeiten…", 130, 34);
+        void Edit() { var pr = SelectedDesign(); if (pr == null) { MessageBox.Show("Bitte zuerst ein angelerntes Design in der Liste auswählen. „Automatisch“ ist fest eingebaut.", Text); return; } _m.TeachDesign(this, pr); RefreshProfileLists(); }
+        edit.Click += (_, __) => Edit(); _designs.DoubleClick += (_, __) => Edit();
+        _designs.SelectedIndexChanged += (_, __) => edit.Enabled = SelectedDesign() != null; edit.Enabled = false;
+        // Kartengröße: einmal für alle Designs; ein Design kann im Editor davon abweichen
+        _sizeMode.Items.AddRange(new object[] { "Scheckkarte 85,6 × 54 mm (Standard)", "Eigene Maße", "Automatisch (keine Vorgabe)" });
+        _sizeMode.SelectedIndex = _s.CardSizeMode == "custom" ? 1 : _s.CardSizeMode == "auto" ? 2 : 0;
+        _sizeW.Value = (decimal)_s.CardWidthMm; _sizeH.Value = (decimal)_s.CardHeightMm;
+        void SizeUi() { bool c = _sizeMode.SelectedIndex == 1; _sizeW.Enabled = c; _sizeH.Enabled = c; }
+        _sizeMode.SelectedIndexChanged += (_, __) => SizeUi(); SizeUi();
+        var measure = Theme.Outline("Aus erkannten Ausweisen messen", 270, 34);
+        measure.Click += async (_, __) =>
+        {
+            measure.Enabled = false; _sizeMsg.Text = "Messe …";
+            try
+            {
+                var r = await _m.MeasureCardSize();
+                if (r == null) _sizeMsg.Text = "Zum Messen bitte erst einen Scan mit mindestens zwei Ausweisen auflegen und erkennen lassen.";
+                else { _sizeMode.SelectedIndex = 1; _sizeW.Value = (decimal)r.Value.w; _sizeH.Value = (decimal)r.Value.h; _sizeMsg.Text = $"Gemessen an {r.Value.n} Karten: {CardSizes.Describe(r.Value.w, r.Value.h)} – übernommen (mit „Fertig“ speichern)."; }
+            }
+            catch (Exception e) { _sizeMsg.Text = "Messung fehlgeschlagen: " + e.Message; }
+            finally { measure.Enabled = true; }
+        };
         var del = Theme.Ghost("Ausgewähltes löschen", 180, 34);
         del.Click += (_, __) =>
         {
@@ -164,8 +190,14 @@ sealed class SettingsForm : Form
         return Page("Ausweis-Design",
             Head("Welches Design wird gelesen?", "Design", "„Automatisch“ probiert alle angelernten Designs durch und sucht sonst nach „Name:“ / „Vorname“ auf der Karte. Das ist fast immer richtig – ein festes Design nur wählen, wenn mehrere ähnliche Designs verwechselt werden."), Row(_profile),
             Head("Angelernte Designs", "Neues Design anlernen", "Ändert die Schule das Ausweis-Design, genügt ein Beispiel-Ausweis: einmal das Namensfeld mit der Maus markieren.\n\nDesigns sind einfache Dateien (JSON) und lassen sich auf andere Rechner kopieren."), Row(_designs),
-            Flow(add, del, open));
+            Flow(add, edit, del, open),
+            Head("Kartengröße", "Kartengröße", "Mit bekannter Größe passt das Programm den Rahmen exakt ein: Der Schatten am Rand wird abgeschnitten und der Rahmen sitzt genau auf der Karte. Weicht eine Karte von der Größe ab, wird sie trotzdem normal erkannt.\n\nStandard ist die übliche Scheckkarte (85,6 × 54 mm). Bei anderen Ausweisen „Eigene Maße“ eintragen oder per „Aus erkannten Ausweisen messen“ übernehmen. Ein einzelnes Design kann im Editor eine eigene Größe bekommen."),
+            Flow(_sizeMode, _sizeW, new Label { Text = "×", AutoSize = true, ForeColor = Theme.Muted }, _sizeH, new Label { Text = "mm", AutoSize = true, ForeColor = Theme.Muted }),
+            Flow(measure), _sizeMsg);
     }
+
+    /// <summary>Das in der Liste gewählte, angelernte Design (nicht „Automatisch“).</summary>
+    Profile? SelectedDesign() => _designs.SelectedItem is string n && n != "Automatisch" ? _m.Profiles.FirstOrDefault(p => p.Name == n) : null;
 
     void FillDesigns() { _designs.Items.Clear(); foreach (var pr in _m.Profiles) _designs.Items.Add(pr.Name); }
 
@@ -216,6 +248,7 @@ sealed class SettingsForm : Form
         _s.Dpi = (int)_dpi.Value; _s.UseDriverDialog = _driver.Checked; _s.EsclEnabled = _escl.Checked; _s.EsclHosts = Hosts();
         if (_dev.SelectedItem is ScanDevice d) _m.SelectDevice(d.Id);
         var idx = _profile.SelectedIndex; if (idx >= 0 && idx < _m.Profiles.Count) _s.ProfileName = _m.Profiles[idx].Name;
+        _s.CardSizeMode = _sizeMode.SelectedIndex == 1 ? "custom" : _sizeMode.SelectedIndex == 2 ? "auto" : "id1"; _s.CardWidthMm = (double)_sizeW.Value; _s.CardHeightMm = (double)_sizeH.Value;
         _s.CheckUpdates = _updChk.Checked; _s.JpegQuality = (int)_q.Value; _s.EdgeInsetMm = (double)_inset.Value; _s.WatchFolder = _watch.Text.Trim();
     }
 }

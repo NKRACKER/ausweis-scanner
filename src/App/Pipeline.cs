@@ -38,8 +38,12 @@ sealed class ScanInfo
 {
     public Raster Image = null!;
     public double Dpi = 300;
+    public double SnapW, SnapH;    // bekannte Kartengröße (mm) für das exakte Einpassen; 0 = unbekannt
     public string Name = "Scan";   // Dateiname bzw. Beschriftung (für das Blättern im Gesamtscan)
     public List<ScanQuad> Quads = new List<ScanQuad>();
+
+    /// <summary>Erkennungs-Einstellungen für nachträgliche Eckensuche in diesem Scan (gleiche Auflösung und Kartengröße wie die automatische Erkennung).</summary>
+    public DetectorOptions Options(double insetMm) => new DetectorOptions { Dpi = Dpi, EdgeInsetMm = insetMm, SnapWidthMm = SnapW, SnapHeightMm = SnapH };
 }
 
 sealed class PipelineResult
@@ -71,6 +75,7 @@ static class Pipeline
         foreach (var tryDpi in new[] { dpi, EstimateDpiFromPage(scan), 300, 150, 200, 600 }.Where(d => d > 0).Distinct())
         {
             var opt = new DetectorOptions { Dpi = tryDpi, EdgeInsetMm = settings.EdgeInsetMm };
+            if (CardSizes.TryResolve(settings, selected, out var snapW, out var snapH)) { opt.SnapWidthMm = snapW; opt.SnapHeightMm = snapH; }
             if (selected.CardWidthMm > 0 && selected.CardHeightMm > 0) { opt.ExpectedWidthMm = selected.CardWidthMm; opt.ExpectedHeightMm = selected.CardHeightMm; }
             det = CardDetector.Detect(scan, opt);
             if (det.Cards.Count > 0) { if (Math.Abs(tryDpi - dpi) > 1) res.Warnings.Add($"Auflösung des Bildes unklar – mit {tryDpi:0} dpi ausgewertet."); dpi = tryDpi; break; }
@@ -82,6 +87,7 @@ static class Pipeline
         var matcher = loc != null && auto ? new ProfileMatcher(loc, profiles) : null;
 
         var info = new ScanInfo { Image = scan, Dpi = dpi };
+        if (CardSizes.TryResolve(settings, selected, out var iw, out var ih)) { info.SnapW = iw; info.SnapH = ih; }
         res.Scan = info;
         int n = 0;
         foreach (var dc in det.Cards)
