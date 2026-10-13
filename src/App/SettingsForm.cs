@@ -133,7 +133,7 @@ sealed class SettingsForm : Form
         return Page("Scanner",
             Head("Scanner", "Scanner finden", "Gefunden werden Scanner über WIA, TWAIN und – wenn unten aktiviert – im Netzwerk (AirScan).\n\nGeht keiner davon: mit der Scanner-Software scannen und die Datei ins Hauptfenster ziehen."), Row(_dev, re),
             Head("Auflösung", "Auflösung", "300 dpi reicht für Ausweise. Höhere Werte machen den Scan langsamer, aber nicht besser lesbar."), Flow(_dpi, new Label { Text = "dpi", AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false }),
-            Head("Scan-Dialog"), WithHelp(_driver, "Scan-Dialog des Herstellers", "Öffnet beim Scannen die Oberfläche des Scanner-Treibers (Vorschau, Bereich, Helligkeit …). Nützlich, wenn der Schnellscan nicht klappt oder die Glasplatte nur teilweise erfasst wird."),
+            Head("Scanvorgang"), WithHelp(_driver, "Scan-Dialog des Herstellers", "Öffnet beim Scannen die Oberfläche des Scanner-Treibers (Vorschau, Bereich, Helligkeit …). Nützlich, wenn der Schnellscan nicht klappt oder die Glasplatte nur teilweise erfasst wird."),
             Head("Netzwerkscanner", "AirScan / eSCL", "Sucht per AirScan nach Scannern im lokalen Netz und spricht nur mit dem gewählten Scanner.\n\nFeste Adressen (eine pro Zeile, z. B. 192.168.1.20) helfen, wenn die Suche nichts findet."), _escl,
             Head("Feste Adressen"), Row(_hosts));
     }

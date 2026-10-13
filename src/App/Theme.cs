@@ -100,7 +100,8 @@ sealed class ModernButton : Button
     {
         if (Kind == K.Icon) return Size;
         var t = TextRenderer.MeasureText(Text, Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
-        return new Size(t.Width + Padding.Horizontal, Math.Max(t.Height + Theme.Px(12), MinimumSize.Height));
+        // MinimumSize mitmelden: Layouts (Flow/Tabelle) rechnen mit dieser Größe – sonst überlappen Knöpfe, die per Mindestbreite breiter sind als ihr Text
+        return new Size(Math.Max(t.Width + Padding.Horizontal, MinimumSize.Width), Math.Max(t.Height + Theme.Px(12), MinimumSize.Height));
     }
 
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
