@@ -121,11 +121,10 @@ sealed class MainForm : Form
         _empty.Resize += (_, __) => _inner.Location = new Point(Math.Max(0, (_empty.Width - _inner.Width) / 2), Math.Max(10, (_empty.Height - _inner.Height) / 2 - 20));
 
         // Liste: oben Zusammenfassung + Aktionen, darunter die Kacheln
-        var strip = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 1, BackColor = Theme.Bg, Padding = new Padding(24, 12, 20, 6), Margin = Padding.Empty };
-        strip.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); strip.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var sr = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, BackColor = Color.Transparent, Margin = Padding.Empty, Anchor = AnchorStyles.Right };
-        foreach (var b in new[] { _viewScan, _addScan, _clear }) { b.Margin = new Padding(8, 0, 0, 0); sr.Controls.Add(b); }
-        strip.Controls.Add(_summary, 0, 0); strip.Controls.Add(sr, 1, 0);
+        // Fließend mit Umbruch: bei schmalem Fenster rutschen die Knöpfe in eine zweite Zeile, statt den Text zu quetschen
+        var strip = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, BackColor = Theme.Bg, Padding = new Padding(24, 12, 20, 6), Margin = Padding.Empty };
+        _summary.Margin = new Padding(0, 6, 28, 0); strip.Controls.Add(_summary);
+        foreach (var b in new[] { _viewScan, _addScan, _clear }) { b.Margin = new Padding(0, 0, 8, 0); strip.Controls.Add(b); }
         _list.Controls.Add(_flow); _list.Controls.Add(strip);
 
         // Fußleiste: Speicherort links, Status in der Mitte, großer Speichern-Knopf rechts
