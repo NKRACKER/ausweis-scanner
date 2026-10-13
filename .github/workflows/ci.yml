@@ -84,6 +84,11 @@ jobs:
             Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test',"ui-main-s$t.png",'ui-scan\scan.png'
           }
           Remove-Item Env:\AUSWEIS_UI_SCALE
+          # schmales Fenster (Antwortfähigkeit)
+          $env:AUSWEIS_UI_SIZE = '760x640'
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-main-narrow.png','ui-scan\scan.png'
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--ui-test','ui-empty-narrow.png'
+          Remove-Item Env:\AUSWEIS_UI_SIZE
           Get-Item ui-*.png | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v6

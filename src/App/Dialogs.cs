@@ -7,6 +7,35 @@ using AusweisScanner.Core;
 
 namespace AusweisScanner.App;
 
+/// <summary>Gemeinsame Bausteine der Dialoge: Kopfzeile mit „?“, Fußleiste mit Hauptknöpfen – antwortfähig (wächst mit dem Inhalt, nichts überlappt).</summary>
+static class Dialogs
+{
+    public static Control TopBar(Label info, Label? hint, Control help)
+    {
+        var t = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 2, BackColor = Theme.Surface, Padding = new Padding(18, 12, 18, 10), MinimumSize = new Size(0, 52) };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        help.Anchor = AnchorStyles.Left; help.Margin = new Padding(10, 0, 0, 0);
+        t.Controls.Add(info, 0, 0); t.Controls.Add(help, 1, 0);
+        if (hint != null) { hint.Margin = new Padding(0, 4, 0, 0); t.Controls.Add(hint, 0, 1); t.SetColumnSpan(hint, 2); }
+        t.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, t.Height - 1, t.Width, t.Height - 1); };
+        return t;
+    }
+
+    /// <summary>Fußleiste: links frei für weitere Knöpfe, rechts „Abbrechen“ + Hauptknopf. Setzt AcceptButton/CancelButton des Formulars.</summary>
+    public static Panel BottomBar(out Button ok, out Button cancel, Form form, string okText, out FlowLayoutPanel left)
+    {
+        var bar = new Panel { Dock = DockStyle.Bottom, Height = 64, BackColor = Theme.Surface };
+        bar.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };
+        ok = Theme.Primary(okText, 170, 42, Theme.Ok); cancel = Theme.Ghost("Abbrechen", 110, 42);
+        ok.DialogResult = DialogResult.OK; cancel.DialogResult = DialogResult.Cancel; form.AcceptButton = ok; form.CancelButton = cancel;
+        var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 11, 16, 0), BackColor = Color.Transparent };
+        ok.Margin = new Padding(6, 0, 0, 0); right.Controls.Add(ok); right.Controls.Add(cancel);
+        left = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, WrapContents = false, Padding = new Padding(14, 11, 0, 0), BackColor = Color.Transparent };
+        bar.Controls.Add(right); bar.Controls.Add(left);
+        return bar;
+    }
+}
+
 /// <summary>Bild mit Maus-Rahmen: liefert gezogene Bereiche als Anteile (0..1) der Karte.</summary>
 sealed class ImagePanel : Control
 {

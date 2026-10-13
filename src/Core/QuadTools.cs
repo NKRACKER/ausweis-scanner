@@ -69,6 +69,24 @@ public static class QuadTools
         return new[] { P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1) };
     }
 
+    /// <summary>Ganze Kante parallel verschieben (Kante 0 = oben, 1 = rechts, 2 = unten, 3 = links; bezogen auf die normierten Ecken). Die Karte bleibt ein Rechteck mit derselben Drehung.</summary>
+    public static PointD[] DragEdge(PointD[] q, int edge, PointD p, double minSize = 6)
+    {
+        var o = q[0]; var u = Unit(q[0], q[1]); var v = Unit(q[0], q[3]);
+        double W = Dist(q[0], q[1]), H = Dist(q[0], q[3]);
+        var d = new PointD(p.X - o.X, p.Y - o.Y);
+        double a = Dot(d, u), b = Dot(d, v), u0 = 0, u1 = W, v0 = 0, v1 = H;
+        switch (((edge % 4) + 4) % 4)
+        {
+            case 0: v0 = Math.Min(b, v1 - minSize); break;
+            case 1: u1 = Math.Max(a, u0 + minSize); break;
+            case 2: v1 = Math.Max(b, v0 + minSize); break;
+            default: u0 = Math.Min(a, u1 - minSize); break;
+        }
+        PointD P(double x, double y) => new PointD(o.X + u.X * x + v.X * y, o.Y + u.Y * x + v.Y * y);
+        return new[] { P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1) };
+    }
+
     /// <summary>Karte um ihre Mitte drehen, sodass Ecke <paramref name="idx"/> zum Punkt <paramref name="p"/> zeigt (Größe bleibt).</summary>
     public static PointD[] RotateTo(PointD[] q, int idx, PointD p)
     {

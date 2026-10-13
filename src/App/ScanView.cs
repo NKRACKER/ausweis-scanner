@@ -15,13 +15,13 @@ namespace AusweisScanner.App;
 /// </summary>
 sealed class ScanCanvas : Control
 {
-    enum Mode { None, Draw, Press, Move, Corner, Rotate }
+    enum Mode { None, Draw, Press, Move, Corner, Edge, Rotate }
 
     readonly ScanInfo _scan; readonly Bitmap _bmp; readonly double _sw, _sh, _ox, _oy; readonly double _insetMm; readonly bool _single;
     PointD? _loupe;   // Mitte der Lupe (Scan-Koordinaten), solange eine Ecke gezogen wird
     public List<ScanQuad> Quads = new List<ScanQuad>();
     int _sel = -1;
-    Mode _mode; Point _down, _now; int _hitQuad, _hitCorner; PointD[]? _origin; PointD _downScan;
+    Mode _mode; Point _down, _now; int _hitQuad, _hitCorner, _hitEdge; PointD[]? _origin; PointD _downScan;
     public event Action? Changed;
     public event Action<string>? Hint;
 
@@ -101,13 +101,22 @@ sealed class ScanCanvas : Control
             using (var bb = new SolidBrush(Color.FromArgb(220, q.Include ? Color.FromArgb(22, 163, 74) : Color.FromArgb(110, 110, 110)))) g.FillRectangle(bb, bx);
             g.DrawString(label, f, Brushes.White, bx.X + 6, bx.Y + 2);
         }
-        if (HasSelection)        // Eck-Griffe am gewählten Ausweis
-            foreach (var pt in Quads[_sel].Corners.Select(ToView))
+        if (HasSelection)        // Griffe am gewählten Ausweis: Ecken (Quadrate) und Kantenmitten (Balken)
+        {
+            var cv = Quads[_sel].Corners.Select(ToView).ToArray();
+            using var green = new Pen(Color.FromArgb(22, 163, 74), 2);
+            float hr = HandleRadius * 0.6f;
+            for (int i = 0; i < 4; i++)
             {
-                float hr = HandleRadius * 0.6f;
-                g.FillRectangle(Brushes.White, pt.X - hr, pt.Y - hr, hr * 2, hr * 2);
-                using var hp = new Pen(Color.FromArgb(22, 163, 74), 2); g.DrawRectangle(hp, pt.X - hr, pt.Y - hr, hr * 2, hr * 2);
+                var a1 = cv[i]; var b1 = cv[(i + 1) % 4];
+                float ang = (float)(Math.Atan2(b1.Y - a1.Y, b1.X - a1.X) * 180 / Math.PI), mx = (a1.X + b1.X) / 2, my = (a1.Y + b1.Y) / 2;
+                var st = g.Save(); g.TranslateTransform(mx, my); g.RotateTransform(ang);
+                float bl = hr * 2.4f, bt = hr * 0.9f;
+                using (var bp = Theme.Round(new RectangleF(-bl, -bt, bl * 2, bt * 2), bt)) { g.FillPath(Brushes.White, bp); g.DrawPath(green, bp); }
+                g.Restore(st);
             }
+            foreach (var pt in cv) { g.FillRectangle(Brushes.White, pt.X - hr, pt.Y - hr, hr * 2, hr * 2); g.DrawRectangle(green, pt.X - hr, pt.Y - hr, hr * 2, hr * 2); }
+        }
         if (_loupe is PointD lc) DrawLoupe(g, lc, r);
         if (_mode == Mode.Draw)
         {
@@ -166,6 +175,18 @@ sealed class ScanCanvas : Control
         return -1;
     }
 
+    int HitEdge(Point p)
+    {
+        if (!HasSelection) return -1;
+        var c = Quads[_sel].Corners.Select(ToView).ToArray();
+        for (int i = 0; i < 4; i++)
+        {
+            var a = c[i]; var b = c[(i + 1) % 4]; float mx = (a.X + b.X) / 2, my = (a.Y + b.Y) / 2;
+            if (Math.Abs(mx - p.X) <= HandleRadius * 1.3f && Math.Abs(my - p.Y) <= HandleRadius * 1.3f) return i;
+        }
+        return -1;
+    }
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
         if (e.Button == MouseButtons.Right && !_single && InImage(e.Location)) { int rq = HitQuad(e.Location); if (rq >= 0) ShowMenu(rq, e.Location); return; }
@@ -173,6 +194,8 @@ sealed class ScanCanvas : Control
         _down = _now = e.Location; _downScan = ToScan(e.Location);
         int ci = HitCorner(e.Location);
         if (ci >= 0) { _mode = (ModifierKeys & Keys.Control) != 0 ? Mode.Rotate : Mode.Corner; _hitCorner = ci; _hitQuad = _sel; _origin = Quads[_sel].Corners; return; }
+        int ei = HitEdge(e.Location);
+        if (ei >= 0) { _mode = Mode.Edge; _hitEdge = ei; _hitQuad = _sel; _origin = Quads[_sel].Corners; return; }
         int qi = HitQuad(e.Location);
         if (qi >= 0) { _mode = Mode.Press; _hitQuad = qi; _origin = Quads[qi].Corners; return; }
         if (_single) return;   // Einzelansicht: nichts Neues aufziehen
@@ -192,9 +215,11 @@ sealed class ScanCanvas : Control
             case Mode.Move:
             { var sp = ToScan(e.Location); Edit(_hitQuad, QuadTools.Move(_origin!, sp.X - _downScan.X, sp.Y - _downScan.Y)); return; }
             case Mode.Corner: _loupe = ToScan(e.Location); Edit(_hitQuad, QuadTools.DragCorner(_origin!, _hitCorner, ToScan(e.Location), Math.Max(4, _scan.Dpi / 25.4 * 8))); return;
+            case Mode.Edge: _loupe = ToScan(e.Location); Edit(_hitQuad, QuadTools.DragEdge(_origin!, _hitEdge, ToScan(e.Location), Math.Max(4, _scan.Dpi / 25.4 * 8))); return;
             case Mode.Rotate: _loupe = ToScan(e.Location); Edit(_hitQuad, QuadTools.RotateTo(_origin!, _hitCorner, ToScan(e.Location))); return;
         }
-        Cursor = HitCorner(e.Location) >= 0 ? Cursors.SizeAll : HitQuad(e.Location) >= 0 ? Cursors.Hand : Cursors.Cross;
+        int hc = HitCorner(e.Location), he = hc >= 0 ? -1 : HitEdge(e.Location);
+        Cursor = hc >= 0 ? Cursors.SizeAll : he >= 0 ? (he % 2 == 0 ? Cursors.SizeNS : Cursors.SizeWE) : HitQuad(e.Location) >= 0 ? Cursors.Hand : Cursors.Cross;
     }
 
     void Edit(int qi, PointD[] corners) { Quads[qi].Corners = corners; Quads[qi].Dirty = true; Changed?.Invoke(); Invalidate(); }
@@ -246,8 +271,9 @@ sealed class ScanCanvas : Control
 
 sealed class ScanViewForm : Form
 {
-    readonly ScanCanvas _canvas; readonly Label _info = new Label { AutoSize = false, Font = Theme.Font(10f), ForeColor = Theme.Text, BackColor = Color.Transparent };
-    readonly Label _hint = new Label { AutoSize = false, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent };
+    readonly ScanCanvas _canvas;
+    readonly Label _info = new Label { AutoSize = true, Font = Theme.Font(11f, true), ForeColor = Theme.Text, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left };
+    readonly Label _hint = new Label { AutoSize = true, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left, Visible = false };
     public List<ScanQuad> Result => _canvas.Quads;
     readonly Button _delete = Theme.Ghost("🗑  Rahmen löschen", 170, 40);
     internal void DemoRegion() => _canvas.DemoRegion();
@@ -255,38 +281,30 @@ sealed class ScanViewForm : Form
     public ScanViewForm(ScanInfo scan, string? note, double edgeInsetMm = 0.6, CardItem? select = null)
     {
         Icon = Theme.AppIcon; Text = "Gesamter Scan"; BackColor = Theme.Surface; StartPosition = FormStartPosition.CenterParent; KeyPreview = true;
-        Size = new Size(1100, 860); MinimumSize = new Size(700, 520);
+        Size = new Size(1100, 860); MinimumSize = new Size(640, 480);
         _canvas = new ScanCanvas(scan, edgeInsetMm) { Dock = DockStyle.Fill, Quads = scan.Quads.Select(q => new ScanQuad { Corners = q.Corners, Item = q.Item, Include = q.Item != null, Manual = q.Manual, Dirty = false }).ToList() };
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Theme.Surface, Padding = new Padding(16, 8, 16, 4) };
-        _hint.Dock = DockStyle.Top; _hint.Height = 44; _info.Dock = DockStyle.Top; _info.Height = 26; _info.AutoEllipsis = true;
-        top.Controls.Add(_hint); top.Controls.Add(_info);   // später hinzugefügt = zuerst angedockt → _info oben
-        var bar = new Panel { Dock = DockStyle.Bottom, Height = 62, BackColor = Theme.Surface };
-        bar.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };
-        var ok = Theme.Primary("Übernehmen", 170, 40, Theme.Ok); var cancel = Theme.Ghost("Abbrechen", 110, 40);
-        ok.DialogResult = DialogResult.OK; cancel.DialogResult = DialogResult.Cancel; AcceptButton = ok; CancelButton = cancel;
-        var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 10, 16, 0), BackColor = Color.Transparent };
-        btns.Controls.Add(ok); btns.Controls.Add(cancel);
-        _delete.Dock = DockStyle.Left; _delete.Margin = Padding.Empty; _delete.ForeColor = Theme.Bad; _delete.Enabled = false;
+        var top = Dialogs.TopBar(_info, _hint, Theme.Help("Gesamter Scan", "Grün = wird übernommen. Ein Klick auf einen Ausweis nimmt ihn heraus (grau) oder wieder hinein.\n\nNicht erkannt? Grob einen Rahmen darum ziehen – die Ecken werden automatisch gesucht.\n\nGewählten Ausweis anpassen: Eckpunkt ziehen ändert die Größe, die Mitte einer Kante verschiebt die ganze Kante, Strg + Eckpunkt dreht, im Ausweis ziehen verschiebt. Beim Ziehen zeigt eine Lupe die Stelle vergrößert.\n\nEntf oder Rechtsklick löscht einen Rahmen."));
+        var bar = Dialogs.BottomBar(out var ok, out var cancel, this, "Übernehmen", out var left);
+        _delete.ForeColor = Theme.Bad; _delete.Enabled = false; _delete.Margin = new Padding(0, 0, 0, 0);
         _delete.Click += (_, __) => _canvas.DeleteSelected();
-        bar.Controls.Add(btns); bar.Controls.Add(_delete);
+        left.Controls.Add(_delete);
         Controls.Add(_canvas); Controls.Add(top); Controls.Add(bar);
 
         _canvas.Changed += () => { _delete.Enabled = _canvas.HasSelection; Idle(); };
-        KeyPreview = true; KeyDown += (_, e) => { if (e.KeyCode == Keys.Delete && _canvas.HasSelection) { _canvas.DeleteSelected(); e.Handled = true; } }; _canvas.Hint += h => { if (h.Length > 0) _hint.Text = h; else Idle(); };
+        KeyDown += (_, e) => { if (e.KeyCode == Keys.Delete && _canvas.HasSelection) { _canvas.DeleteSelected(); e.Handled = true; } };
+        _canvas.Hint += h => { _hint.Text = h; _hint.Visible = h.Length > 0; };
         _canvas.Resize += (_, __) => _canvas.Invalidate();
         if (select != null) _canvas.SelectIndex(_canvas.Quads.FindIndex(q => q.Item == select));
         Theme.Fit(this);
-        Idle(note);
+        if (!string.IsNullOrEmpty(note)) { _hint.Text = note; _hint.Visible = true; }
+        Idle();
     }
 
-    string? _note;
-    void Idle(string? note) { _note = note ?? _note; Idle(); }
     void Idle()
     {
         int n = _canvas.Quads.Count(q => q.Include && !q.Removed);
-        _info.Text = (n == 1 ? "1 Ausweis ausgewählt" : $"{n} Ausweise ausgewählt") + (string.IsNullOrEmpty(_note) ? "" : "   ·   " + _note);
-        _hint.Text = "Grün = wird übernommen; Klick auf einen Ausweis nimmt ihn heraus bzw. wieder hinein.  Nicht erkannt? Grob einen Rahmen darum ziehen – die Ecken werden automatisch gesucht.  Eckpunkte ziehen = anpassen (Strg = drehen), im Ausweis ziehen = verschieben, Entf oder Rechtsklick = Rahmen löschen.";
+        _info.Text = n == 1 ? "1 Ausweis ausgewählt" : $"{n} Ausweise ausgewählt";
     }
 }
 
@@ -302,26 +320,19 @@ sealed class CropEditorForm : Form
     {
         _scan = scan; _start = corners.ToArray(); _inset = edgeInsetMm;
         Icon = Theme.AppIcon; Text = "Zuschnitt anpassen"; BackColor = Theme.Surface; StartPosition = FormStartPosition.CenterParent; KeyPreview = true;
-        Size = new Size(1000, 780); MinimumSize = new Size(640, 520);
+        Size = new Size(1000, 780); MinimumSize = new Size(600, 480);
         double pad = 10 * scan.Dpi / 25.4;
         double x0 = corners.Min(p => p.X) - pad, y0 = corners.Min(p => p.Y) - pad, x1 = corners.Max(p => p.X) + pad, y1 = corners.Max(p => p.Y) + pad;
         _canvas = new ScanCanvas(scan, edgeInsetMm, new RectD(x0, y0, x1 - x0, y1 - y0)) { Dock = DockStyle.Fill };
         _canvas.Quads.Add(new ScanQuad { Corners = _start.ToArray(), Include = true });
         _canvas.SelectIndex(0);
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Theme.Surface, Padding = new Padding(16, 8, 16, 4) };
-        top.Controls.Add(new Label { Dock = DockStyle.Fill, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, UseMnemonic = false, Text = "Alles außerhalb des grünen Rahmens wird abgeschnitten. Eckpunkt ziehen = Größe anpassen (die gegenüberliegende Ecke bleibt; beim Ziehen zeigt die Lupe die Stelle vergrößert).  Strg + Eckpunkt = drehen,  im Ausweis ziehen = verschieben." });
-        var bar = new Panel { Dock = DockStyle.Bottom, Height = 62, BackColor = Theme.Surface };
-        bar.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };
-        var ok = Theme.Primary("Übernehmen", 170, 40, Theme.Ok); var cancel = Theme.Ghost("Abbrechen", 110, 40);
-        ok.DialogResult = DialogResult.OK; cancel.DialogResult = DialogResult.Cancel; AcceptButton = ok; CancelButton = cancel;
-        var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 10, 16, 0), BackColor = Color.Transparent };
-        btns.Controls.Add(ok); btns.Controls.Add(cancel);
-        var left = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, WrapContents = false, Padding = new Padding(12, 10, 0, 0), BackColor = Color.Transparent };
+        var info = new Label { AutoSize = true, Font = Theme.Font(11f, true), ForeColor = Theme.Text, BackColor = Color.Transparent, UseMnemonic = false, Anchor = AnchorStyles.Left, Text = "Alles außerhalb des grünen Rahmens wird abgeschnitten" };
+        var top = Dialogs.TopBar(info, null, Theme.Help("Zuschnitt anpassen", "Eckpunkt ziehen: Größe ändern – die gegenüberliegende Ecke bleibt stehen.\n\nMitte einer Kante ziehen: die ganze Kante parallel verschieben.\n\nStrg + Eckpunkt: drehen.  Im Ausweis ziehen: verschieben.\n\nBeim Ziehen zeigt eine Lupe die Stelle vergrößert in voller Scan-Auflösung. „Automatisch neu suchen“ findet die Ecken erneut, „Zurücksetzen“ stellt den Anfangszustand wieder her."));
+        var bar = Dialogs.BottomBar(out var ok, out var cancel, this, "Übernehmen", out var left);
         var auto = Theme.Outline("Automatisch neu suchen", 200, 40); var reset = Theme.Ghost("Zurücksetzen", 130, 40);
-        auto.Click += (_, __) => AutoFit(); reset.Click += (_, __) => _canvas.SetCorners(0, _start.ToArray());
+        auto.Margin = new Padding(0, 0, 6, 0); auto.Click += (_, __) => AutoFit(); reset.Click += (_, __) => _canvas.SetCorners(0, _start.ToArray());
         left.Controls.Add(auto); left.Controls.Add(reset);
-        bar.Controls.Add(btns); bar.Controls.Add(left);
         Controls.Add(_canvas); Controls.Add(top); Controls.Add(bar);
         Theme.Fit(this);
     }

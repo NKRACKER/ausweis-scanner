@@ -23,32 +23,32 @@ sealed class MainForm : Form
     IOcrEngine? _ocr; string _ocrProblem = "";
     internal List<ScanDevice> Devices = new List<ScanDevice>(); ScanDevice? _device;
 
-    readonly Label _title = new Label { Text = "Ausweis-Scanner", Font = Theme.Font(15f, true), ForeColor = Theme.Text, AutoSize = true, Anchor = AnchorStyles.Left, BackColor = Color.Transparent, UseMnemonic = false };
-    readonly Button _open = Theme.Outline("Datei öffnen…", 130, 34), _settingsBtn = Theme.Ghost("⚙  Einstellungen", 150, 34);
-    readonly Button _updateBtn = Theme.Primary("⬆  Update verfügbar", 230, 34, Theme.Ok);
+    readonly Label _title = new Label { Text = "Ausweis-Scanner", Font = Theme.Font(14f, true), ForeColor = Theme.Text, AutoSize = true, Anchor = AnchorStyles.Left, BackColor = Color.Transparent, UseMnemonic = false };
+    readonly Button _open = Theme.Outline("Datei öffnen…", 130, 36), _settingsBtn = Theme.Ghost("⚙  Einstellungen", 150, 36);
+    readonly Button _updateBtn = Theme.Primary("⬆  Update verfügbar", 230, 36, Theme.Ok);
     UpdateInfo? _update; readonly string? _postUpdate;
     // Hinweisleiste: eine kompakte, schließbare Zeile unter der Kopfzeile (schiebt den Inhalt nach unten, verdeckt nie etwas)
-    readonly TableLayoutPanel _notice = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, BackColor = Color.FromArgb(255, 247, 224), Visible = false, Padding = new Padding(24, 8, 12, 8), Margin = Padding.Empty };
+    readonly TableLayoutPanel _notice = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, BackColor = Theme.WarnSoft, Visible = false, Padding = new Padding(24, 8, 12, 8), Margin = Padding.Empty };
     readonly Label _noticeText = new Label { AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Color.FromArgb(120, 72, 0), Font = Theme.Font(9.5f), BackColor = Color.Transparent, UseMnemonic = false };
-    readonly Button _noticeAction = Theme.Outline("Im Scan prüfen", 130, 30), _noticeClose = Theme.Icon("✕", "Hinweis schließen");
+    readonly Button _noticeAction = Theme.Outline("Im Scan prüfen", 130, 32), _noticeClose = Theme.Icon("✕", "Hinweis schließen");
     ScanInfo? _noticeScan;
     // Leerzustand
-    readonly Panel _empty = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Margin = Padding.Empty }, _inner = new Panel { Size = new Size(780, 400), BackColor = Color.Transparent };
-    readonly Button _scan = Theme.Primary("Scannen", 240, 56);
-    readonly Label _emptyStatus = new Label { AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Font(10.5f), ForeColor = Theme.Text, BackColor = Color.Transparent };
-    readonly Label _scannerInfo = new Label { AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent };
+    readonly TableLayoutPanel _empty = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Margin = Padding.Empty, ColumnCount = 1, RowCount = 1, AutoScroll = true }, _inner = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, BackColor = Color.Transparent, Anchor = AnchorStyles.None, Margin = Padding.Empty };
+    readonly Button _scan = Theme.Primary("Scannen", 260, 58);
+    readonly Label _emptyStatus = new Label { AutoSize = true, MaximumSize = new Size(700, 0), TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Font(10.5f), ForeColor = Theme.Text, BackColor = Color.Transparent, UseMnemonic = false };
+    readonly Label _scannerInfo = new Label { AutoSize = true, MaximumSize = new Size(700, 0), TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent, UseMnemonic = false };
     // Liste
     readonly Panel _list = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Visible = false, Margin = Padding.Empty };
     readonly Label _summary = new Label { Font = Theme.Font(12f, true), ForeColor = Theme.Text, AutoSize = true, Anchor = AnchorStyles.Left, BackColor = Color.Transparent, UseMnemonic = false };
-    readonly Button _addScan = Theme.Outline("＋  Weiterer Scan", 160, 34), _clear = Theme.Ghost("Liste leeren", 110, 34), _viewScan = Theme.Outline("Gesamten Scan ansehen", 200, 34);
-    readonly FlowLayoutPanel _flow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Bg, Padding = new Padding(14, 4, 14, 14) };
+    readonly Button _addScan = Theme.Outline("＋  Weiterer Scan", 160, 36), _clear = Theme.Ghost("Liste leeren", 110, 36), _viewScan = Theme.Outline("Gesamten Scan", 170, 36);
+    readonly FlowLayoutPanel _flow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Bg, Padding = new Padding(16, 4, 16, 16) };
     // Fußleiste
     readonly TableLayoutPanel _bar = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, BackColor = Theme.Surface, Visible = false, Padding = new Padding(24, 10, 24, 10), MinimumSize = new Size(0, 72), Margin = Padding.Empty };
     readonly Label _barFolderCaption = new Label { Text = "Speichern in", Font = Theme.Font(8.5f), ForeColor = Theme.Muted, AutoSize = true, BackColor = Color.Transparent, UseMnemonic = false };
     readonly Label _barFolder = new Label { Font = Theme.Font(10f), ForeColor = Theme.Text, AutoSize = true, Anchor = AnchorStyles.Left, BackColor = Color.Transparent, UseMnemonic = false };
-    readonly Button _changeFolder = Theme.Ghost("Ändern", 80, 28);
+    readonly Button _changeFolder = Theme.Ghost("Ändern", 70, 26);
     readonly Label _barStatus = new Label { Font = Theme.Font(9f), ForeColor = Theme.Muted, AutoSize = false, Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Transparent, Margin = new Padding(16, 0, 16, 0), UseMnemonic = false };
-    readonly Button _save = Theme.Primary("Alle speichern", 220, 46, Theme.Ok);
+    readonly Button _save = Theme.Primary("Alle speichern", 220, 48, Theme.Ok);
 
     readonly List<CardControl> _cards = new List<CardControl>();
     readonly ConcurrentQueue<string> _watchQueue = new ConcurrentQueue<string>();
@@ -87,13 +87,15 @@ sealed class MainForm : Form
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, BackColor = Theme.Surface, Padding = new Padding(24, 10, 16, 10), MinimumSize = new Size(0, 62), Margin = Padding.Empty };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, BackColor = Theme.Surface, Padding = new Padding(22, 10, 16, 10), MinimumSize = new Size(0, 64), Margin = Padding.Empty };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.Paint += (_, e) => { using var p = new Pen(Theme.Line); e.Graphics.DrawLine(p, 0, header.Height - 1, header.Width, header.Height - 1); };
+        var logo = new PictureBox { Size = new Size(30, 30), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 10, 0) };
+        try { if (Theme.AppIcon != null) logo.Image = new Icon(Theme.AppIcon, 64, 64).ToBitmap(); } catch { }
         var right = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, BackColor = Color.Transparent, Margin = Padding.Empty, Anchor = AnchorStyles.Right };
         foreach (var b in new[] { _updateBtn, _open, _settingsBtn }) b.Margin = new Padding(6, 0, 0, 0);
         right.Controls.Add(_updateBtn); right.Controls.Add(_open); right.Controls.Add(_settingsBtn);
-        header.Controls.Add(_title, 0, 0); header.Controls.Add(right, 1, 0);
+        header.Controls.Add(logo, 0, 0); header.Controls.Add(_title, 1, 0); header.Controls.Add(right, 2, 0);
 
         // Hinweisleiste
         _notice.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); _notice.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -103,27 +105,23 @@ sealed class MainForm : Form
         _noticeClose.Click += (_, __) => Notice("", false);
         _noticeAction.Click += async (_, __) => { var sc = _noticeScan; if (sc != null) await OpenScanView(sc, null); };
 
-        // Leerzustand: drei Schritte, ein großer Knopf
-        string[,] steps = { { "1", "Ausweise auflegen", "Bildseite nach unten, mit etwa 5 mm Abstand. Wie herum, ist egal. Deckel offen lassen." }, { "2", "Scannen", "Ein Klick. Die Ausweise werden automatisch erkannt und ausgeschnitten." }, { "3", "Prüfen & speichern", "Namen kurz kontrollieren, dann alle auf einmal als Nachname_Vorname speichern." } };
-        for (int i = 0; i < 3; i++)
-        {
-            int x = i * 260;
-            _inner.Controls.Add(new StepBadge(steps[i, 0]) { Location = new Point(x, 10) });
-            _inner.Controls.Add(new Label { UseMnemonic = false, Text = steps[i, 1], Font = Theme.Font(11.5f, true), ForeColor = Theme.Text, AutoSize = false, Size = new Size(210, 26), Location = new Point(x + 44, 12), BackColor = Color.Transparent });
-            _inner.Controls.Add(new Label { UseMnemonic = false, Text = steps[i, 2], Font = Theme.Font(9.5f), ForeColor = Theme.Muted, AutoSize = false, Size = new Size(205, 80), Location = new Point(x + 44, 42), BackColor = Color.Transparent });
-        }
-        _inner.Size = new Size(780, 330);
-        _scan.Location = new Point((780 - 240) / 2, 140);
-        _emptyStatus.SetBounds(0, 212, 780, 28); _scannerInfo.SetBounds(0, 242, 780, 24);
-        var drag = new Label { Text = "oder eine fertige Scan-Datei (Bild/PDF) hierher ziehen", Font = Theme.Font(9.5f), ForeColor = Theme.Muted, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(0, 276, 780, 24), BackColor = Color.Transparent, UseMnemonic = false };
-        _inner.Controls.AddRange(new Control[] { _scan, _emptyStatus, _scannerInfo, drag });
-        _empty.Controls.Add(_inner);
-        _empty.Resize += (_, __) => _inner.Location = new Point(Math.Max(0, (_empty.Width - _inner.Width) / 2), Math.Max(10, (_empty.Height - _inner.Height) / 2 - 20));
+        // Leerzustand: drei Schritte (kurz, Details hinter „?“), ein großer Knopf – bricht bei schmalem Fenster um und bleibt zentriert
+        var steps = new FlowLayoutPanel { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 26), Anchor = AnchorStyles.None, MaximumSize = new Size(900, 0) };
+        steps.Controls.Add(Step("1", "Auflegen", "Bildseite nach unten, mit Abstand", "Ausweise auflegen", "Bildseite nach unten, etwa 5 mm Abstand zueinander und zum Rand. Die Drehung ist egal. Deckel offen lassen oder dunkles Papier darüberlegen – das erkennt helle Karten am besten."));
+        steps.Controls.Add(Step("2", "Scannen", "Ein Klick – Ausweise werden gefunden", "Scannen", "Die Ausweise werden automatisch erkannt, ausgeschnitten und gedreht; der Name wird gelesen. Alles bleibt lokal auf diesem Rechner."));
+        steps.Controls.Add(Step("3", "Speichern", "Namen prüfen, alle speichern", "Prüfen & speichern", "Jeder Ausweis wird eine Datei „Nachname_Vorname“. Doppelte Namen bekommen _2, _3 … – es wird nie etwas überschrieben."));
+        _scan.Anchor = AnchorStyles.None; _scan.Margin = new Padding(0, 0, 0, 14);
+        _emptyStatus.Anchor = AnchorStyles.None; _scannerInfo.Anchor = AnchorStyles.None; _scannerInfo.Margin = new Padding(0, 0, 0, 6);
+        var drag = new Label { Text = "oder eine Scan-Datei (Bild/PDF) hierher ziehen", Font = Theme.Font(9.5f), ForeColor = Theme.Muted, AutoSize = true, Anchor = AnchorStyles.None, BackColor = Color.Transparent, UseMnemonic = false };
+        _inner.Controls.Add(steps, 0, 0); _inner.Controls.Add(_scan, 0, 1); _inner.Controls.Add(_emptyStatus, 0, 2); _inner.Controls.Add(_scannerInfo, 0, 3); _inner.Controls.Add(drag, 0, 4);
+        _empty.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); _empty.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _empty.Controls.Add(_inner, 0, 0);
 
         // Liste: oben Zusammenfassung + Aktionen, darunter die Kacheln
         // Fließend mit Umbruch: bei schmalem Fenster rutschen die Knöpfe in eine zweite Zeile, statt den Text zu quetschen
         var strip = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, BackColor = Theme.Bg, Padding = new Padding(24, 12, 20, 6), Margin = Padding.Empty };
-        _summary.Margin = new Padding(0, 6, 28, 0); strip.Controls.Add(_summary);
+        _summary.Margin = new Padding(0, 8, 4, 0); strip.Controls.Add(_summary);
+        var help = Theme.Help("Und jetzt?", "Namen kontrollieren und bei Bedarf korrigieren (Enter springt zum nächsten Feld). Klick aufs Bild oder ✂ passt den Zuschnitt an, ⟳ dreht, ✕ entfernt den Ausweis. Danach „Alle speichern“ (Strg+S)."); help.Margin = new Padding(0, 8, 28, 0); strip.Controls.Add(help);
         foreach (var b in new[] { _viewScan, _addScan, _clear }) { b.Margin = new Padding(0, 0, 8, 0); strip.Controls.Add(b); }
         _list.Controls.Add(_flow); _list.Controls.Add(strip);
 
@@ -143,6 +141,20 @@ sealed class MainForm : Form
         content.Controls.Add(_list); content.Controls.Add(_empty);
         root.Controls.Add(header, 0, 0); root.Controls.Add(_notice, 0, 1); root.Controls.Add(content, 0, 2); root.Controls.Add(_bar, 0, 3);
         Controls.Add(root);
+    }
+
+    /// <summary>Ein Schritt im Leerzustand: Nummer, Titel, eine kurze Zeile – Details hinter dem „?“.</summary>
+    Control Step(string n, string title, string line, string helpTitle, string help)
+    {
+        var t = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(14, 0, 14, 12) };
+        var badge = new StepBadge(n) { Margin = new Padding(0, 2, 12, 0) };
+        var head = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = Padding.Empty };
+        head.Controls.Add(new Label { Text = title, Font = Theme.Font(12f, true), ForeColor = Theme.Text, AutoSize = true, Margin = new Padding(0, 2, 0, 0), UseMnemonic = false });
+        var q = Theme.Help(helpTitle, help); q.Margin = new Padding(8, 4, 0, 0); head.Controls.Add(q);
+        t.Controls.Add(badge, 0, 0); t.SetRowSpan(badge, 2);
+        t.Controls.Add(head, 1, 0);
+        t.Controls.Add(new Label { Text = line, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, AutoSize = true, MaximumSize = new Size(190, 0), Margin = new Padding(0, 2, 0, 0), UseMnemonic = false }, 1, 1);
+        return t;
     }
 
     void FitNoticeText()
@@ -225,7 +237,7 @@ sealed class MainForm : Form
     {
         bool has = _cards.Count > 0;
         _empty.Visible = !has; _list.Visible = has; _bar.Visible = has;
-        _summary.Text = has ? (_cards.Count == 1 ? "1 Ausweis erkannt" : $"{_cards.Count} Ausweise erkannt") + "  ·  Namen prüfen, dann speichern" : "";
+        _summary.Text = has ? (_cards.Count == 1 ? "1 Ausweis" : $"{_cards.Count} Ausweise") : "";
         _barFolder.Text = ShortPath(S.OutputDir) + "   (" + S.Format.ToUpperInvariant() + ")";
         _save.Text = _cards.Count == 0 ? "Alle speichern" : $"Alle speichern ({_cards.Count})";
         UpdateScannerInfo();
@@ -578,6 +590,9 @@ sealed class MainForm : Form
     async Task UiTestCapture()
     {
         await Task.Delay(800); Application.DoEvents();
+        // Schmales Fenster testen (Antwortfähigkeit): AUSWEIS_UI_SIZE=760x640
+        var sz = Environment.GetEnvironmentVariable("AUSWEIS_UI_SIZE")?.Split('x');
+        if (sz != null && sz.Length == 2 && int.TryParse(sz[0], out var sw) && int.TryParse(sz[1], out var sh)) { WindowState = FormWindowState.Normal; Size = new Size(sw, sh); await Task.Delay(500); Application.DoEvents(); }
         void Snap(Control c, string path) { using var b = new Bitmap(c.Width, c.Height); c.DrawToBitmap(b, new Rectangle(Point.Empty, c.Size)); b.Save(path, System.Drawing.Imaging.ImageFormat.Png); }
         var baseName = Path.ChangeExtension(_uiTestOut!, null);
         if (_cards.Count > 0)   // Worst Case der Hinweiszeile: viele Detektor-Meldungen

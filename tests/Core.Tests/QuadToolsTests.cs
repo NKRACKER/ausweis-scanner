@@ -66,4 +66,28 @@ public class QuadToolsTests
         Assert.InRange(Math.Sqrt(Math.Pow(n[1].X - n[0].X, 2) + Math.Pow(n[1].Y - n[0].Y, 2)), 199.9, 200.1);
         Assert.InRange(n.Average(t => t.X), 99.9, 100.1); Assert.InRange(n.Average(t => t.Y), 49.9, 50.1);
     }
+
+    [Theory]
+    [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)]
+    public void DragEdge_MovesOnlyThatEdge_KeepsRotation(int edge)
+    {
+        double a = 20 * Math.PI / 180, cs = Math.Cos(a), sn = Math.Sin(a);
+        PointD R(double x, double y) => P(300 + x * cs - y * sn, 200 + x * sn + y * cs);
+        var q = new[] { R(0, 0), R(200, 0), R(200, 120), R(0, 120) };
+        // Zielpunkt: 15 Einheiten „nach außen“ der gewählten Kante (im Karten-Koordinatensystem)
+        var target = edge switch { 0 => R(100, -15), 1 => R(215, 60), 2 => R(100, 135), _ => R(-15, 60) };
+        var n = QuadTools.DragEdge(q, edge, target);
+        double W = Math.Sqrt(Math.Pow(n[1].X - n[0].X, 2) + Math.Pow(n[1].Y - n[0].Y, 2)), H = Math.Sqrt(Math.Pow(n[3].X - n[0].X, 2) + Math.Pow(n[3].Y - n[0].Y, 2));
+        Assert.InRange(W, edge == 1 || edge == 3 ? 214.9 : 199.9, edge == 1 || edge == 3 ? 215.1 : 200.1);
+        Assert.InRange(H, edge == 0 || edge == 2 ? 134.9 : 119.9, edge == 0 || edge == 2 ? 135.1 : 120.1);
+        Assert.InRange(Math.Atan2(n[1].Y - n[0].Y, n[1].X - n[0].X) * 180 / Math.PI, 19.9, 20.1);
+    }
+
+    [Fact]
+    public void DragEdge_CannotCollapse()
+    {
+        var q = QuadTools.Normalize(new[] { P(0, 0), P(200, 0), P(200, 100), P(0, 100) });
+        var n = QuadTools.DragEdge(q, 0, P(100, 500));          // obere Kante weit unter die untere gezogen
+        Assert.True(n[3].Y - n[0].Y >= 5.9);
+    }
 }

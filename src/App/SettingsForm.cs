@@ -8,112 +8,134 @@ using AusweisScanner.Core;
 
 namespace AusweisScanner.App;
 
-/// <summary>Alles Konfigurierbare an einem Ort, in Tabs: das Hauptfenster bleibt dadurch schlicht.</summary>
+/// <summary>
+/// Alles Konfigurierbare an einem Ort, in Tabs: das Hauptfenster bleibt dadurch schlicht.
+/// Antwortfähig: Felder füllen die Breite, Inhalte scrollen statt abgeschnitten zu werden; Erklärungen stehen hinter kleinen „?“.
+/// </summary>
 sealed class SettingsForm : Form
 {
     readonly MainForm _m; readonly Settings _s; readonly TabControl _tabs = new TabControl { Dock = DockStyle.Fill, Font = Theme.Font(10f), Padding = new Point(18, 6) };
     // Allgemein
     readonly TextBox _dir = Theme.Field(380), _tpl = Theme.Field(260);
-    readonly RadioButton _jpg = new RadioButton { Text = "JPG (klein, überall lesbar – empfohlen)", AutoSize = true }, _pdf = new RadioButton { Text = "PDF (eine Seite pro Ausweis, in Kartengröße)", AutoSize = true }, _png = new RadioButton { Text = "PNG (verlustfrei, große Dateien)", AutoSize = true };
-    readonly CheckBox _umlaut = new CheckBox { Text = "Umlaute ersetzen (ä → ae, ö → oe, ü → ue, ß → ss)", AutoSize = true };
-    readonly Label _example = new Label { AutoSize = true, ForeColor = Theme.Muted };
-    readonly CheckBox _updChk = new CheckBox { Text = "Automatisch nach neuen Versionen suchen (verbindet sich beim Start mit github.com)", AutoSize = true };
-    readonly Label _updMsg = new Label { AutoSize = false, Size = new Size(470, 40), ForeColor = Theme.Muted };
+    readonly RadioButton _jpg = new RadioButton { Text = "JPG  (empfohlen)", AutoSize = true }, _pdf = new RadioButton { Text = "PDF", AutoSize = true }, _png = new RadioButton { Text = "PNG", AutoSize = true };
+    readonly CheckBox _umlaut = new CheckBox { Text = "Umlaute ersetzen (ä → ae, ß → ss)", AutoSize = true };
+    readonly Label _example = new Label { AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false };
+    readonly CheckBox _updChk = new CheckBox { Text = "Automatisch nach neuen Versionen suchen", AutoSize = true };
+    readonly Label _updMsg = new Label { AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false };
     // Scanner
     readonly ComboBox _dev = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 400 };
     readonly NumericUpDown _dpi = new NumericUpDown { Minimum = 100, Maximum = 600, Increment = 50, Width = 90 };
-    readonly CheckBox _driver = new CheckBox { Text = "Scan-Dialog des Herstellers verwenden (Vorschau, Bereich, Helligkeit …)", AutoSize = true };
-    readonly CheckBox _escl = new CheckBox { Text = "Netzwerkscanner im lokalen Netz suchen (AirScan)", AutoSize = true };
-    readonly TextBox _hosts = new TextBox { Multiline = true, Width = 400, Height = 56, ScrollBars = ScrollBars.Vertical };
+    readonly CheckBox _driver = new CheckBox { Text = "Scan-Dialog des Herstellers verwenden", AutoSize = true };
+    readonly CheckBox _escl = new CheckBox { Text = "Netzwerkscanner im lokalen Netz suchen", AutoSize = true };
+    readonly TextBox _hosts = new TextBox { Multiline = true, Height = 64, ScrollBars = ScrollBars.Vertical };
     // Design
     readonly ComboBox _profile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
-    readonly ListBox _designs = new ListBox { Width = 400, Height = 100, IntegralHeight = false };
+    readonly ListBox _designs = new ListBox { Height = 110, IntegralHeight = false, BorderStyle = BorderStyle.FixedSingle };
     // Erweitert
     readonly NumericUpDown _q = new NumericUpDown { Minimum = 50, Maximum = 100, Width = 80 }, _inset = new NumericUpDown { Minimum = 0, Maximum = 3, DecimalPlaces = 1, Increment = 0.1M, Width = 80 };
     readonly TextBox _watch = Theme.Field(380);
     // Diagnose
-    readonly TextBox _diag = new TextBox { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Both, WordWrap = false, Font = new Font("Consolas", 9.5f), BackColor = Color.White };
+    readonly TextBox _diag = new TextBox { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Both, WordWrap = false, Font = new Font("Consolas", Theme.Pt(9.5f)), BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
     bool _diagLoaded;
     public int TabCount => _tabs.TabCount;
     public void SelectTab(int i) => _tabs.SelectedIndex = i;
 
     public SettingsForm(MainForm m, int tab)
     {
-        _m = m; _s = m.S; if (Theme.AppIcon != null) Icon = Theme.AppIcon; Text = "Einstellungen"; Size = new Size(720, 590); StartPosition = FormStartPosition.CenterParent; FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; Font = Theme.Font(10f); BackColor = Theme.Bg;
-        var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, BackColor = Theme.Surface, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 11, 20, 0) };
-        var ok = Theme.Primary("Fertig", 120, 36); var cancel = Theme.Ghost("Abbrechen", 110, 36);
-        ok.DialogResult = DialogResult.None; cancel.DialogResult = DialogResult.Cancel;
-        ok.Click += (_, __) => { Apply(); DialogResult = DialogResult.OK; Close(); };
-        bottom.Controls.Add(ok); bottom.Controls.Add(cancel); AcceptButton = ok; CancelButton = cancel;   // Fluss von rechts: „Fertig“ ganz rechts
-        Controls.Add(_tabs); Controls.Add(bottom);
+        _m = m; _s = m.S; if (Theme.AppIcon != null) Icon = Theme.AppIcon; Text = "Einstellungen"; Size = new Size(760, 640); MinimumSize = new Size(600, 480);
+        StartPosition = FormStartPosition.CenterParent; FormBorderStyle = FormBorderStyle.Sizable; MaximizeBox = true; MinimizeBox = false; Font = Theme.Font(10f); BackColor = Theme.Bg;
+        var bar = Dialogs.BottomBar(out var ok, out var cancel, this, "Fertig", out _);
+        ok.DialogResult = DialogResult.None; ok.Click += (_, __) => { Apply(); DialogResult = DialogResult.OK; Close(); };
+        Controls.Add(_tabs); Controls.Add(bar);
 
         _tabs.TabPages.Add(PageGeneral()); _tabs.TabPages.Add(PageScanner()); _tabs.TabPages.Add(PageDesign()); _tabs.TabPages.Add(PageAdvanced()); _tabs.TabPages.Add(PageDiag());
-        foreach (TabPage p in _tabs.TabPages)
-        {
-            // Inhalt in ein eigenes Panel mit festem Rand: TabPage.Padding verschob Beschriftungen gegenüber Eingabefeldern
-            p.BackColor = Theme.Surface; p.Padding = Padding.Empty; if (p.Text != "Diagnose") p.AutoScroll = true;   // kleine/hochskalierte Bildschirme: scrollen statt abschneiden
-            var inner = new Panel { Location = new Point(20, 16), Size = new Size(640, 470), BackColor = Color.Transparent, Anchor = AnchorStyles.Top | AnchorStyles.Left };
-            var kids = p.Controls.Cast<Control>().ToList(); p.Controls.Clear();
-            foreach (var k in kids) inner.Controls.Add(k);
-            p.Controls.Add(inner);
-        }
         Theme.Fit(this);
         _tabs.SelectedIndex = Math.Max(0, Math.Min(tab, _tabs.TabCount - 1));
         _tabs.SelectedIndexChanged += async (_, __) => { if (_tabs.SelectedIndex == 4 && !_diagLoaded) await LoadDiag(); };
         Shown += async (_, __) => { if (_tabs.SelectedIndex == 4 && !_diagLoaded) await LoadDiag(); };
     }
 
-    // ---- Bausteine
-    static Label H(string t, int y) => new Label { Text = t, Font = Theme.Font(10f, true), ForeColor = Theme.Text, AutoSize = true, Location = new Point(0, y) };
-    static Label Hint(string t, int y, int w = 640) => new Label { Text = t, Font = Theme.Font(9f), ForeColor = Theme.Muted, AutoSize = false, Size = new Size(w, 36), Location = new Point(0, y) };
-    static T At<T>(T c, int x, int y) where T : Control { c.Location = new Point(x, y); return c; }
+    // ---- Bausteine: Seite = scrollbare Spalte; Zeile = Überschrift (+ ?) bzw. Eingabe (Feld füllt die Breite)
+    static TabPage Page(string title, params Control[] rows)
+    {
+        var p = new TabPage(title) { BackColor = Theme.Surface, AutoScroll = true, Padding = Padding.Empty };
+        var t = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, BackColor = Color.Transparent, Padding = new Padding(22, 18, 22, 18) };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (var r in rows) { r.Dock = DockStyle.Top; t.Controls.Add(r); }
+        p.Controls.Add(t); return p;
+    }
+
+    /// <summary>Überschrift mit optionalem „?“.</summary>
+    static Control Head(string text, string? helpTitle = null, string? help = null)
+    {
+        var f = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 14, 0, 6) };
+        f.Controls.Add(new Label { Text = text, Font = Theme.Font(10.5f, true), ForeColor = Theme.Text, AutoSize = true, Margin = new Padding(0, 2, 0, 0), UseMnemonic = false });
+        if (help != null) { var q = Theme.Help(helpTitle ?? text, help); q.Margin = new Padding(8, 0, 0, 0); f.Controls.Add(q); }
+        return f;
+    }
+
+    /// <summary>Zeile mit einem Feld, das die Breite füllt, und optionalen Knöpfen rechts.</summary>
+    static Control Row(Control fill, params Control[] right)
+    {
+        var t = new TableLayoutPanel { AutoSize = true, ColumnCount = 1 + right.Length, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 4) };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        fill.Dock = DockStyle.Fill; fill.Margin = new Padding(0, 0, right.Length > 0 ? 8 : 0, 0); fill.MinimumSize = new Size(Theme.Px(120), 0);
+        t.Controls.Add(fill, 0, 0);
+        for (int i = 0; i < right.Length; i++) { t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); right[i].Anchor = AnchorStyles.Right; right[i].Margin = new Padding(i == 0 ? 0 : 6, 0, 0, 0); t.Controls.Add(right[i], i + 1, 0); }
+        return t;
+    }
+
+    static Control Flow(params Control[] items)
+    {
+        var f = new FlowLayoutPanel { AutoSize = true, WrapContents = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 4) };
+        foreach (var i in items) { i.Margin = new Padding(0, 3, 14, 3); f.Controls.Add(i); }
+        return f;
+    }
+
+    /// <summary>Kontrollkästchen mit „?“ daneben.</summary>
+    static Control WithHelp(Control c, string title, string help)
+    {
+        var f = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 4) };
+        c.Margin = new Padding(0, 3, 0, 0); f.Controls.Add(c); var q = Theme.Help(title, help); q.Margin = new Padding(8, 0, 0, 0); f.Controls.Add(q); return f;
+    }
 
     TabPage PageGeneral()
     {
-        var p = new TabPage("Allgemein");
-        p.Controls.Add(H("Speicherordner", 0));
-        _dir.Text = _s.OutputDir; p.Controls.Add(At(_dir, 0, 26));
-        var b = Theme.Outline("Wählen…", 100, 28); b.Location = new Point(392, 25); b.Click += (_, __) => { using var d = new FolderBrowserDialog { SelectedPath = Directory.Exists(_dir.Text) ? _dir.Text : "" }; if (d.ShowDialog(this) == DialogResult.OK) _dir.Text = d.SelectedPath; };
-        p.Controls.Add(b);
-        p.Controls.Add(H("Dateiformat", 76));
+        _dir.Text = _s.OutputDir;
+        var pick = Theme.Outline("Wählen…", 100, 32); pick.Click += (_, __) => { using var d = new FolderBrowserDialog { SelectedPath = Directory.Exists(_dir.Text) ? _dir.Text : "" }; if (d.ShowDialog(this) == DialogResult.OK) _dir.Text = d.SelectedPath; };
         _jpg.Checked = _s.Format == "jpg"; _pdf.Checked = _s.Format == "pdf"; _png.Checked = _s.Format == "png";
-        p.Controls.Add(At(_jpg, 0, 102)); p.Controls.Add(At(_pdf, 0, 128)); p.Controls.Add(At(_png, 0, 154));
-        p.Controls.Add(H("Dateiname", 200));
-        _tpl.Text = _s.Template; p.Controls.Add(At(_tpl, 0, 226)); p.Controls.Add(At(_example, 280, 229));
-        p.Controls.Add(Hint("Platzhalter: {Nachname}  {Vorname}  {Klasse}  {Datum}.  Doppelte Namen werden nie überschrieben, sondern mit _2, _3 … ergänzt.", 258));
-        _umlaut.Checked = _s.TransliterateUmlauts; p.Controls.Add(At(_umlaut, 0, 302));
-        p.Controls.Add(H("Updates", 346));
-        _updChk.Checked = _s.CheckUpdates; p.Controls.Add(At(_updChk, 0, 372));
-        var chk = Theme.Outline("Einmal suchen", 130, 30); chk.Location = new Point(0, 402);
+        _tpl.Text = _s.Template; _umlaut.Checked = _s.TransliterateUmlauts; _tpl.Dock = DockStyle.None; _tpl.Width = Theme.Px(260);
+        _updChk.Checked = _s.CheckUpdates;
+        var chk = Theme.Outline("Einmal suchen", 130, 32);
         chk.Click += async (_, __) => { chk.Enabled = false; _updMsg.Text = "Suche …"; try { _updMsg.Text = await _m.CheckForUpdate(true); } finally { chk.Enabled = true; } };
-        p.Controls.Add(chk); _updMsg.Location = new Point(142, 399); _updMsg.Text = "Installiert: Version " + Updater.CurrentText + (_s.CheckUpdates ? "" : "  ·  automatische Suche ist aus"); p.Controls.Add(_updMsg);
+        _updMsg.Text = "Installiert: Version " + Updater.CurrentText + (_s.CheckUpdates ? "" : "  ·  automatische Suche ist aus");
         EventHandler upd = (_, __) => UpdateExample(); _tpl.TextChanged += upd; _umlaut.CheckedChanged += upd; _jpg.CheckedChanged += upd; _pdf.CheckedChanged += upd; _png.CheckedChanged += upd; UpdateExample();
-        return p;
+        return Page("Allgemein",
+            Head("Speicherordner"), Row(_dir, pick),
+            Head("Dateiformat", "Dateiformat", "JPG ist klein und überall lesbar (empfohlen). PDF legt eine Seite pro Ausweis in Kartengröße an. PNG ist verlustfrei, die Dateien werden aber groß."), Flow(_jpg, _pdf, _png),
+            Head("Dateiname", "Dateiname", "Platzhalter: {Nachname}  {Vorname}  {Klasse}  {Datum}.\n\nDoppelte Namen werden nie überschrieben, sondern mit _2, _3 … ergänzt."), Flow(_tpl, _example), WithHelp(_umlaut, "Umlaute", "Ersetzt ä → ae, ö → oe, ü → ue, ß → ss – nützlich, wenn Dateinamen später auf Systemen ohne Umlaut-Unterstützung landen."),
+            Head("Updates", "Update-Suche", "Beim Start fragt das Programm anonym bei github.com, ob es eine neue Version gibt. Es werden keine Daten über Scans oder Ausweise gesendet. Ausgeschaltet verbindet sich das Programm von selbst nie mit dem Internet; „Einmal suchen“ geht trotzdem."),
+            _updChk, Flow(chk, _updMsg));
     }
 
     void UpdateExample()
     {
         var n = FileNamer.BaseName(new ParsedName("Müller", "Anna"), new NamingOptions { Template = _tpl.Text.Trim().Length > 0 ? _tpl.Text.Trim() : "{Nachname}_{Vorname}", TransliterateUmlauts = _umlaut.Checked }, new Dictionary<string, string> { ["Klasse"] = "7b", ["Datum"] = DateTime.Now.ToString("yyyy-MM-dd") });
-        _example.Text = "Beispiel:  " + n + (_pdf.Checked ? ".pdf" : _png.Checked ? ".png" : ".jpg");
+        _example.Text = "→  " + n + (_pdf.Checked ? ".pdf" : _png.Checked ? ".png" : ".jpg");
     }
 
     TabPage PageScanner()
     {
-        var p = new TabPage("Scanner");
-        p.Controls.Add(H("Scanner", 0));
-        FillDevices(); p.Controls.Add(At(_dev, 0, 26));
-        var re = Theme.Outline("Neu suchen", 110, 28); re.Location = new Point(412, 25);
+        FillDevices();
+        var re = Theme.Outline("Neu suchen", 110, 32);
         re.Click += async (_, __) => { re.Enabled = false; re.Text = "Suche …"; try { _s.EsclEnabled = _escl.Checked; _s.EsclHosts = Hosts(); await _m.RefreshDevices(_escl.Checked); FillDevices(); } finally { re.Enabled = true; re.Text = "Neu suchen"; } };
-        p.Controls.Add(re);
-        p.Controls.Add(Hint("Gefunden werden Scanner über WIA, TWAIN und – wenn unten aktiviert – im Netzwerk (AirScan). Geht keiner davon: mit der Scanner-Software scannen und die Datei ins Hauptfenster ziehen.", 62));
-        p.Controls.Add(H("Auflösung", 112)); _dpi.Value = _s.Dpi; p.Controls.Add(At(_dpi, 0, 138)); p.Controls.Add(At(new Label { Text = "dpi   (300 reicht für Ausweise)", AutoSize = true, ForeColor = Theme.Muted }, 100, 142));
-        _driver.Checked = _s.UseDriverDialog; p.Controls.Add(At(_driver, 0, 182));
-        p.Controls.Add(Hint("Nützlich, wenn der Schnellscan nicht klappt oder die Glasplatte nur teilweise erfasst wird.", 206));
-        p.Controls.Add(H("Netzwerkscanner (AirScan / eSCL)", 252));
-        _escl.Checked = _s.EsclEnabled; p.Controls.Add(At(_escl, 0, 278));
-        p.Controls.Add(At(new Label { Text = "Feste Adressen, falls die Suche nichts findet (eine pro Zeile, z. B. 192.168.1.20):", AutoSize = true, ForeColor = Theme.Muted, Font = Theme.Font(9f) }, 0, 308));
-        _hosts.Text = string.Join("\r\n", _s.EsclHosts); p.Controls.Add(At(_hosts, 0, 330));
-        return p;
+        _dpi.Value = _s.Dpi; _driver.Checked = _s.UseDriverDialog; _escl.Checked = _s.EsclEnabled; _hosts.Text = string.Join("\r\n", _s.EsclHosts);
+        return Page("Scanner",
+            Head("Scanner", "Scanner finden", "Gefunden werden Scanner über WIA, TWAIN und – wenn unten aktiviert – im Netzwerk (AirScan).\n\nGeht keiner davon: mit der Scanner-Software scannen und die Datei ins Hauptfenster ziehen."), Row(_dev, re),
+            Head("Auflösung", "Auflösung", "300 dpi reicht für Ausweise. Höhere Werte machen den Scan langsamer, aber nicht besser lesbar."), Flow(_dpi, new Label { Text = "dpi", AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false }),
+            Head("Scan-Dialog"), WithHelp(_driver, "Scan-Dialog des Herstellers", "Öffnet beim Scannen die Oberfläche des Scanner-Treibers (Vorschau, Bereich, Helligkeit …). Nützlich, wenn der Schnellscan nicht klappt oder die Glasplatte nur teilweise erfasst wird."),
+            Head("Netzwerkscanner", "AirScan / eSCL", "Sucht per AirScan nach Scannern im lokalen Netz und spricht nur mit dem gewählten Scanner.\n\nFeste Adressen (eine pro Zeile, z. B. 192.168.1.20) helfen, wenn die Suche nichts findet."), _escl,
+            Head("Feste Adressen"), Row(_hosts));
     }
 
     List<string> Hosts() => _hosts.Text.Split(new[] { '\r', '\n', ';', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
@@ -127,15 +149,10 @@ sealed class SettingsForm : Form
 
     TabPage PageDesign()
     {
-        var p = new TabPage("Ausweis-Design");
-        p.Controls.Add(H("Welches Design wird gelesen?", 0));
         foreach (var pr in _m.Profiles) _profile.Items.Add(pr.Name == "Automatisch" ? "Automatisch (empfohlen)" : pr.Name);
-        _profile.SelectedIndex = Math.Max(0, _m.Profiles.FindIndex(x => x.Name == _s.ProfileName)); p.Controls.Add(At(_profile, 0, 26));
-        p.Controls.Add(Hint("„Automatisch“ probiert alle angelernten Designs durch und sucht sonst nach „Name:“/„Vorname“ auf der Karte. Das ist fast immer richtig – ein festes Design nur wählen, wenn mehrere ähnliche Designs verwechselt werden.", 62, 640));
-        p.Controls.Add(H("Angelernte Designs", 116));
-        p.Controls.Add(At(_designs, 0, 142)); FillDesigns();
-        var add = Theme.Outline("Neues Design anlernen…", 210, 32); add.Location = new Point(0, 256); add.Click += (_, __) => { _m.TeachDesign(this); RefreshProfileLists(); };
-        var del = Theme.Ghost("Ausgewähltes löschen", 180, 32); del.Location = new Point(220, 256);
+        _profile.SelectedIndex = Math.Max(0, _m.Profiles.FindIndex(x => x.Name == _s.ProfileName)); FillDesigns();
+        var add = Theme.Outline("Neues Design anlernen…", 210, 34); add.Click += (_, __) => { _m.TeachDesign(this); RefreshProfileLists(); };
+        var del = Theme.Ghost("Ausgewähltes löschen", 180, 34);
         del.Click += (_, __) =>
         {
             if (!(_designs.SelectedItem is string name) || name == "Automatisch") return;
@@ -143,10 +160,11 @@ sealed class SettingsForm : Form
             try { var f = Directory.GetFiles(Paths.ProfilesDir, "*.json").FirstOrDefault(x => { try { return Profile.FromJson(File.ReadAllText(x)).Name == name; } catch { return false; } }); if (f != null) File.Delete(f); } catch (Exception e) { MessageBox.Show(e.Message); }
             _m.ReloadProfiles(_s.ProfileName); RefreshProfileLists();
         };
-        var open = Theme.Ghost("Ordner öffnen", 130, 32); open.Location = new Point(410, 256); open.Click += (_, __) => { try { Directory.CreateDirectory(Paths.ProfilesDir); System.Diagnostics.Process.Start("explorer.exe", "\"" + Paths.ProfilesDir + "\""); } catch { } };
-        p.Controls.Add(add); p.Controls.Add(del); p.Controls.Add(open);
-        p.Controls.Add(Hint("Ändert die Schule das Ausweis-Design, genügt ein Beispiel-Ausweis: einmal das Namensfeld mit der Maus markieren. Designs sind einfache Dateien und lassen sich auf andere Rechner kopieren.", 304, 640));
-        return p;
+        var open = Theme.Ghost("Ordner öffnen", 130, 34); open.Click += (_, __) => { try { Directory.CreateDirectory(Paths.ProfilesDir); System.Diagnostics.Process.Start("explorer.exe", "\"" + Paths.ProfilesDir + "\""); } catch { } };
+        return Page("Ausweis-Design",
+            Head("Welches Design wird gelesen?", "Design", "„Automatisch“ probiert alle angelernten Designs durch und sucht sonst nach „Name:“ / „Vorname“ auf der Karte. Das ist fast immer richtig – ein festes Design nur wählen, wenn mehrere ähnliche Designs verwechselt werden."), Row(_profile),
+            Head("Angelernte Designs", "Neues Design anlernen", "Ändert die Schule das Ausweis-Design, genügt ein Beispiel-Ausweis: einmal das Namensfeld mit der Maus markieren.\n\nDesigns sind einfache Dateien (JSON) und lassen sich auf andere Rechner kopieren."), Row(_designs),
+            Flow(add, del, open));
     }
 
     void FillDesigns() { _designs.Items.Clear(); foreach (var pr in _m.Profiles) _designs.Items.Add(pr.Name); }
@@ -159,27 +177,27 @@ sealed class SettingsForm : Form
 
     TabPage PageAdvanced()
     {
-        var p = new TabPage("Erweitert");
-        p.Controls.Add(H("JPEG-Qualität", 0)); _q.Value = _s.JpegQuality; p.Controls.Add(At(_q, 0, 26)); p.Controls.Add(At(new Label { Text = "50–100   (92 ist ein guter Kompromiss)", AutoSize = true, ForeColor = Theme.Muted }, 92, 30));
-        p.Controls.Add(H("Randabzug beim Ausschneiden", 76)); _inset.Value = (decimal)Math.Max(0, Math.Min(3, _s.EdgeInsetMm)); p.Controls.Add(At(_inset, 0, 102)); p.Controls.Add(At(new Label { Text = "mm   (schneidet Schattenrand und Hintergrund weg; zu groß schneidet Inhalt an)", AutoSize = true, ForeColor = Theme.Muted }, 92, 106));
-        p.Controls.Add(H("Ordner überwachen (Automatik)", 152));
-        p.Controls.Add(Hint("Neue Scan-Dateien (Bild/PDF) in diesem Ordner werden automatisch eingelesen – z. B. wenn die Scanner-Software dort ablegt. Leer = aus.", 178, 640));
-        _watch.Text = _s.WatchFolder; p.Controls.Add(At(_watch, 0, 222));
-        var b = Theme.Outline("Wählen…", 100, 28); b.Location = new Point(392, 221); b.Click += (_, __) => { using var d = new FolderBrowserDialog(); if (d.ShowDialog(this) == DialogResult.OK) _watch.Text = d.SelectedPath; };
-        var clear = Theme.Ghost("Aus", 60, 28); clear.Location = new Point(500, 221); clear.Click += (_, __) => _watch.Text = "";
-        p.Controls.Add(b); p.Controls.Add(clear);
-        p.Controls.Add(H("Datenschutz", 280));
-        p.Controls.Add(Hint("Das Programm verbindet sich nur mit github.com, um nach neuen Versionen zu fragen (abschaltbar unter „Allgemein“) – dabei werden keine Daten über Sie, Scans oder Ausweise gesendet. Der Roh-Scan wird nicht gespeichert, nur die einzelnen Ausweise im Speicherordner. Einstellungen und Designs enthalten keine Namen.", 306, 640));
-        return p;
+        _q.Value = _s.JpegQuality; _inset.Value = (decimal)Math.Max(0, Math.Min(3, _s.EdgeInsetMm)); _watch.Text = _s.WatchFolder;
+        var pick = Theme.Outline("Wählen…", 100, 32); pick.Click += (_, __) => { using var d = new FolderBrowserDialog(); if (d.ShowDialog(this) == DialogResult.OK) _watch.Text = d.SelectedPath; };
+        var off = Theme.Ghost("Aus", 60, 32); off.Click += (_, __) => _watch.Text = "";
+        string Mut(string t) => t;
+        Label L(string t) => new Label { Text = t, AutoSize = true, ForeColor = Theme.Muted, UseMnemonic = false };
+        return Page("Erweitert",
+            Head("JPEG-Qualität", "JPEG-Qualität", "50–100. 92 ist ein guter Kompromiss aus Dateigröße und Schärfe."), Flow(_q, L("%")),
+            Head("Randabzug beim Ausschneiden", "Randabzug", "Schneidet Schattenrand und Hintergrund weg. Zu groß gewählt, wird Inhalt des Ausweises angeschnitten."), Flow(_inset, L("mm")),
+            Head("Ordner überwachen", "Ordner überwachen", "Neue Scan-Dateien (Bild/PDF) in diesem Ordner werden automatisch eingelesen – z. B. wenn die Scanner-Software dort ablegt. Leer = aus."), Row(_watch, pick, off),
+            Head("Datenschutz", "Datenschutz", "Alles bleibt lokal auf diesem Rechner. Die einzige Verbindung ist die anonyme Update-Abfrage bei github.com (abschaltbar unter „Allgemein“) – dabei werden keine Daten über Sie, Scans oder Ausweise gesendet. Der Roh-Scan wird nicht gespeichert, nur die einzelnen Ausweise im Speicherordner. Einstellungen und Designs enthalten keine Namen."),
+            L("Alles bleibt lokal auf diesem Rechner."));
     }
 
     TabPage PageDiag()
     {
-        var p = new TabPage("Diagnose");
-        var top = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.Transparent };
-        var again = Theme.Outline("Neu erstellen", 130, 30); again.Location = new Point(0, 4); again.Click += async (_, __) => await LoadDiag();
-        var copy = Theme.Outline("Kopieren", 110, 30); copy.Location = new Point(140, 4); copy.Click += (_, __) => { try { Clipboard.SetText(_diag.Text); copy.Text = "Kopiert ✓"; } catch { } };
-        top.Controls.Add(again); top.Controls.Add(copy);
+        var p = new TabPage("Diagnose") { BackColor = Theme.Surface, Padding = new Padding(16) };
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, BackColor = Color.Transparent, Padding = new Padding(0, 0, 0, 8) };
+        var again = Theme.Outline("Neu erstellen", 130, 34); again.Click += async (_, __) => await LoadDiag();
+        var copy = Theme.Outline("Kopieren", 110, 34); copy.Click += (_, __) => { try { Clipboard.SetText(_diag.Text); copy.Text = "Kopiert ✓"; } catch { } };
+        var q = Theme.Help("Diagnose", "Zeigt, welche Scanner und welche Texterkennung gefunden wurden – hilfreich bei Problemen. Der Bericht enthält keine Personendaten."); q.Margin = new Padding(8, 6, 0, 0);
+        top.Controls.Add(again); copy.Margin = new Padding(6, 3, 0, 3); top.Controls.Add(copy); top.Controls.Add(q);
         p.Controls.Add(_diag); p.Controls.Add(top); _diag.BringToFront();
         return p;
     }
