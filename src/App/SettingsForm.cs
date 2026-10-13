@@ -51,7 +51,7 @@ sealed class SettingsForm : Form
         foreach (TabPage p in _tabs.TabPages)
         {
             // Inhalt in ein eigenes Panel mit festem Rand: TabPage.Padding verschob Beschriftungen gegenüber Eingabefeldern
-            p.BackColor = Theme.Surface; p.Padding = Padding.Empty;
+            p.BackColor = Theme.Surface; p.Padding = Padding.Empty; if (p.Text != "Diagnose") p.AutoScroll = true;   // kleine/hochskalierte Bildschirme: scrollen statt abschneiden
             var inner = new Panel { Location = new Point(20, 16), Size = new Size(640, 470), BackColor = Color.Transparent, Anchor = AnchorStyles.Top | AnchorStyles.Left };
             var kids = p.Controls.Cast<Control>().ToList(); p.Controls.Clear();
             foreach (var k in kids) inner.Controls.Add(k);
