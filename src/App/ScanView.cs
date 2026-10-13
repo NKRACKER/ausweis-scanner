@@ -40,6 +40,7 @@ sealed class ScanCanvas : Control
     PointF ToView(PointD p) { var r = ImageRect(); return new PointF((float)(r.X + p.X / _sw * r.Width), (float)(r.Y + p.Y / _sh * r.Height)); }
     PointD ToScan(Point p) { var r = ImageRect(); return new PointD((p.X - r.X) / r.Width * _sw, (p.Y - r.Y) / r.Height * _sh); }
     bool InImage(Point p) => ImageRect().Contains(p);
+    public void SelectIndex(int i) { _sel = i; Invalidate(); }
     int HandleRadius => Theme.Px(9);
 
     protected override void OnPaint(PaintEventArgs e)
@@ -169,7 +170,7 @@ sealed class ScanViewForm : Form
     public List<ScanQuad> Result => _canvas.Quads;
     internal void DemoRegion() => _canvas.DemoRegion();
 
-    public ScanViewForm(ScanInfo scan, string? note, double edgeInsetMm = 0.6)
+    public ScanViewForm(ScanInfo scan, string? note, double edgeInsetMm = 0.6, CardItem? select = null)
     {
         Icon = Theme.AppIcon; Text = "Gesamter Scan"; BackColor = Theme.Surface; StartPosition = FormStartPosition.CenterParent; KeyPreview = true;
         Size = new Size(1100, 860); MinimumSize = new Size(700, 520);
@@ -189,6 +190,7 @@ sealed class ScanViewForm : Form
 
         _canvas.Changed += Idle; _canvas.Hint += h => { if (h.Length > 0) _hint.Text = h; else Idle(); };
         _canvas.Resize += (_, __) => _canvas.Invalidate();
+        if (select != null) _canvas.SelectIndex(_canvas.Quads.FindIndex(q => q.Item == select));
         Theme.Fit(this);
         Idle(note);
     }

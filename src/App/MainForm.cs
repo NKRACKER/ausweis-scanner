@@ -381,10 +381,17 @@ sealed class MainForm : Form
         m.Show(_viewScan, new Point(0, _viewScan.Height));
     }
 
-    async Task OpenScanView(ScanInfo scan, string? note)
+    /// <summary>Zuschnitt einer Kachel nachträglich korrigieren: Gesamtscan öffnen, Ausweis ist schon gewählt (Eckpunkte sichtbar).</summary>
+    async Task AdjustCrop(CardControl c)
+    {
+        if (c.Item.Scan == null) return;
+        await OpenScanView(c.Item.Scan, "Eckpunkte des gewählten Ausweises ziehen (Strg = drehen), dann „Übernehmen“.", c.Item);
+    }
+
+    async Task OpenScanView(ScanInfo scan, string? note, CardItem? select = null)
     {
         if (_busy) return;
-        using var f = new ScanViewForm(scan, note, S.EdgeInsetMm);
+        using var f = new ScanViewForm(scan, note, S.EdgeInsetMm, select);
         if (f.ShowDialog(this) != DialogResult.OK) { UpdateView(); return; }
         scan.Quads = f.Result;
         foreach (var q in scan.Quads.Where(q => !q.Include && q.Item != null).ToList())
@@ -418,7 +425,13 @@ sealed class MainForm : Form
         foreach (var it in items)
         {
             var c = new CardControl(it, _cards.Count + 1);
-            c.RemoveRequested += RemoveCard; c.PreviewRequested += x => { using var f = new PreviewForm(x.Item.Image, "Ausweis – Großansicht (Esc schließt)"); f.ShowDialog(this); };
+            c.RemoveRequested += RemoveCard; c.CropRequested += async x => await AdjustCrop(x);
+            c.PreviewRequested += async x =>
+            {
+                bool adjust;
+                using (var f = new PreviewForm(x.Item.Image, "Ausweis – Großansicht (Esc schließt)", x.Item.Scan != null)) { f.ShowDialog(this); adjust = f.AdjustRequested; }
+                if (adjust) await AdjustCrop(x);   // erst nach dem Schließen der Großansicht
+            };
             c.RotateRequested += async (x, t) => await RotateCard(x, t);
             c.EnterOnLast += x => { var i = _cards.IndexOf(x); if (i + 1 < _cards.Count) _cards[i + 1].FocusLast(); else _save.Focus(); };
             c.NameEdited += MarkDuplicates;

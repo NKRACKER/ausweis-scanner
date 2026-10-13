@@ -128,4 +128,22 @@ public class CardDetectorTests
         double px = 150 / 25.4;
         Assert.Null(CardDetector.FitCard(scan, new RectD(120 * px, 200 * px, 40 * px, 30 * px), new DetectorOptions { Dpi = 150 }));
     }
+
+    [Fact]
+    public void ScannerShadowBelowCard_IsTrimmedOff()
+    {
+        // heller Deckel, Karte mit weichem Schatten (ca. 2,5 mm) an der Unterkante – er darf nicht im Zuschnitt landen
+        var scan = Make(new[] { new Card { CxMm = 100, CyMm = 120, AngleDeg = 0 } }, lid: 238, dpi: 200);
+        double px = 200 / 25.4;
+        for (double yy = 147; yy < 149.6; yy += 1 / px)
+            for (double xx = 57.2; xx < 142.8; xx += 1 / px)
+            {
+                double t = (yy - 147) / 2.6; byte v = (byte)(200 + 38 * t);   // dunkel direkt an der Kante, nach außen heller
+                scan.Set((int)(xx * px), (int)(yy * px), v, v, v);
+            }
+        var res = CardDetector.Detect(scan, new DetectorOptions { Dpi = 200, EdgeInsetMm = 0.6 });
+        Assert.Single(res.Cards);
+        double hMm = res.Cards[0].HeightPx / px;
+        Assert.InRange(hMm, 51.5, 54.0);   // 54 mm Karte − 2×0,6 mm Randabzug = 52,8; mit Schatten wären es ≈ 55
+    }
 }

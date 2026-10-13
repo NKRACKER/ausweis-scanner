@@ -74,7 +74,9 @@ public static class CardDetector
         var small = scan.Resize(w, h);
         double pxPerMm = opt.Dpi / 25.4 * scale;
 
-        var mask = BuildMask(small, pxPerMm, closeMm, opt.BorderBandMm);
+        var model = MakeModel(small, Gradient(small));
+        var gray = small.ToGray(); double bgGray = (model[0] * 77 + model[1] * 150 + model[2] * 29) / 256;
+        var mask = BuildMask(small, pxPerMm, closeMm, opt.BorderBandMm, model);
         int bandPx = (int)Math.Round(opt.BorderBandMm * pxPerMm);
         var comps = Label(mask, w, h);
         double minArea = 0.5 * opt.MinShortMm * opt.MinShortMm * 1.15 * pxPerMm * pxPerMm;
@@ -117,6 +119,7 @@ public static class CardDetector
                 continue;
             }
 
+            TrimShadow(gray, w, h, bgGray, ref center, longAxis, shortAxis, ref longLen, ref shortLen, pxPerMm);
             double insetPx = opt.EdgeInsetMm * pxPerMm;
             double L = longLen - 2 * insetPx, S = shortLen - 2 * insetPx;
             var card = new DetectedCard
@@ -161,6 +164,7 @@ public static class CardDetector
         int x1 = Math.Min(w, (int)Math.Ceiling(roi.Right * scale) + pad), y1 = Math.Min(h, (int)Math.Ceiling(roi.Bottom * scale) + pad);
         if (x1 - x0 < 8 || y1 - y0 < 8) return null;
         var sub = small.Crop(x0, y0, x1 - x0, y1 - y0);
+        var subGray = sub.ToGray(); double bgGray = (model[0] * 77 + model[1] * 150 + model[2] * 29) / 256;
         double cx = roi.X * scale + roi.W * scale / 2 - x0, cy = roi.Y * scale + roi.H * scale / 2 - y0;   // Mitte des Bereichs im Ausschnitt
 
         foreach (var cl in new[] { 2.0, 1.2, 0.6 })
@@ -183,6 +187,7 @@ public static class CardDetector
             var longAxis = lu >= lv ? u : v;
             if (longAxis.X < -1e-9 || (Math.Abs(longAxis.X) <= 1e-9 && longAxis.Y < 0)) longAxis = longAxis * -1;
             var shortAxis = new PointD(-longAxis.Y, longAxis.X);
+            TrimShadow(subGray, sub.Width, sub.Height, bgGray, ref center, longAxis, shortAxis, ref longLen, ref shortLen, pxPerMm);
             double insetPx = opt.EdgeInsetMm * pxPerMm, L = longLen - 2 * insetPx, S = shortLen - 2 * insetPx;
             PointD Back(PointD p) => new PointD((p.X + x0) / scale, (p.Y + y0) / scale);
             return new DetectedCard
@@ -382,6 +387,57 @@ public static class CardDetector
     }
 
     // ---------- Geometrie ----------
+    /// <summary>
+    /// Der Scanner wirft einen weichen Schatten neben die Karte; er gehört zur erkannten Fläche, aber nicht zur Karte.
+    /// Je Kante wird bis zu 3,5 mm nach innen nach der stärksten Helligkeitskante gesucht und die Kante dorthin gesetzt –
+    /// aber nur, wenn der Streifen davor deutlich dunkler als der Hintergrund ist (echter Schatten). So fressen Foto-Kanten im Inneren den Zuschnitt nicht an.
+    /// </summary>
+    static void TrimShadow(byte[] g, int w, int h, double bgGray, ref PointD center, PointD la, PointD sa, ref double longLen, ref double shortLen, double ppm)
+    {
+        var dirs = new[] { la, la * -1, sa, sa * -1 };
+        var tang = new[] { sa, sa, la, la };
+        double[] half = { longLen / 2, longLen / 2, shortLen / 2, shortLen / 2 };
+        double[] tlen = { shortLen, shortLen, longLen, longLen };
+        var off = new double[4];
+        double inPx = 3.5 * ppm, outPx = 0.6 * ppm; const double step = 0.5;
+        int n = (int)((inPx + outPx) / step) + 1;
+        for (int k = 0; k < 4; k++)
+        {
+            var m = new double[n]; bool ok = true;
+            for (int j = 0; j < n && ok; j++)
+            {
+                double o = -inPx + j * step, sum = 0; int cnt = 0;
+                for (double t = -0.35 * tlen[k]; t <= 0.35 * tlen[k]; t += 1)
+                {
+                    int x = (int)Math.Round(center.X + dirs[k].X * (half[k] + o) + tang[k].X * t), y = (int)Math.Round(center.Y + dirs[k].Y * (half[k] + o) + tang[k].Y * t);
+                    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                    sum += g[y * w + x]; cnt++;
+                }
+                if (cnt < 8) ok = false; else m[j] = sum / cnt;
+            }
+            if (!ok) continue;
+            var sm = new double[n]; for (int j = 0; j < n; j++) sm[j] = (m[Math.Max(0, j - 1)] + m[j] + m[Math.Min(n - 1, j + 1)]) / 3;
+            int best = -1; double bestD = 0, localD = 0;
+            for (int j = 2; j < n - 2; j++)
+            {
+                double d = Math.Abs(sm[j + 1] - sm[j - 1]), o = -inPx + j * step;
+                if (d > bestD) { bestD = d; best = j; }
+                if (Math.Abs(o) <= 0.4 * ppm && d > localD) localD = d;
+            }
+            if (best < 0 || bestD < 6 || bestD < 1.5 * Math.Max(1, localD)) continue;
+            double oBest = -inPx + best * step;
+            if (oBest >= -0.3 * ppm) continue;                                  // Kante liegt schon (fast) richtig
+            // Streifen zwischen Kante und Spitze: dunkler als der Hintergrund (Schatten) und die Karte dahinter deutlich heller?
+            double strip = 0; int sc = 0; for (int j = best; j < n; j++) { if (-inPx + j * step > 0) break; strip += sm[j]; sc++; }
+            int inside = Math.Max(0, best - (int)(1.0 * ppm / step));
+            double cardLevel = sm[inside];
+            if (sc == 0 || strip / sc > bgGray - 6 || cardLevel - strip / sc < 10) continue;
+            off[k] = oBest;
+        }
+        longLen += off[0] + off[1]; shortLen += off[2] + off[3];
+        center = center + la * ((off[0] - off[1]) / 2) + sa * ((off[2] - off[3]) / 2);
+    }
+
     static double PolyArea(List<PointD> h)
     {
         double a = 0;

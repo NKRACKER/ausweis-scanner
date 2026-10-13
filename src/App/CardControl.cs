@@ -10,14 +10,14 @@ namespace AusweisScanner.App;
 sealed class CardControl : Panel
 {
     public CardItem Item { get; }
-    public event Action<CardControl>? RemoveRequested, PreviewRequested, EnterOnLast;
+    public event Action<CardControl>? RemoveRequested, PreviewRequested, EnterOnLast, CropRequested;
     public event Action? NameEdited;
     public event Action<CardControl, int>? RotateRequested;
 
     readonly PictureBox _pic = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, BackColor = Color.FromArgb(243, 244, 246) };
     readonly TextBox _last = Theme.Field(150), _first = Theme.Field(150);
     readonly Label _status = new Label { AutoEllipsis = true, Font = Theme.Font(9f), BackColor = Color.Transparent };
-    readonly Button _more = Theme.Icon("⋯", "Weitere Vorschläge, Drehen"), _swap = Theme.Icon("⇄", "Nachname und Vorname tauschen"), _rot = Theme.Icon("⟳", "90° drehen"), _del = Theme.Icon("✕", "Diesen Ausweis nicht speichern");
+    readonly Button _more = Theme.Icon("⋯", "Weitere Vorschläge, Drehen"), _swap = Theme.Icon("⇄", "Nachname und Vorname tauschen"), _rot = Theme.Icon("⟳", "90° drehen"), _crop = Theme.Icon("✂", "Zuschnitt anpassen (Ecken im Gesamtscan verschieben)"), _del = Theme.Icon("✕", "Diesen Ausweis nicht speichern");
     bool _binding, _dup; int _number; Color _stripe = Theme.Muted;
 
     public CardControl(CardItem item, int number)
@@ -25,12 +25,12 @@ sealed class CardControl : Panel
         Item = item; Size = new Size(350, 296); BackColor = Theme.Surface; DoubleBuffered = true;
         _pic.SetBounds(16, 10, 326, 184); _pic.Click += (_, __) => PreviewRequested?.Invoke(this);
         new ToolTip().SetToolTip(_pic, "Klicken für Großansicht");
-        _status.SetBounds(16, 200, 190, 22);
-        _del.Location = new Point(316, 198); _rot.Location = new Point(290, 198); _swap.Location = new Point(264, 198); _more.Location = new Point(238, 198);
-        _status.Width = 220;
+        _status.SetBounds(16, 200, 170, 22);
+        _del.Location = new Point(316, 198); _rot.Location = new Point(290, 198); _swap.Location = new Point(264, 198); _more.Location = new Point(238, 198); _crop.Location = new Point(212, 198);
+        _status.Width = 190;
         var l1 = Small("Nachname", 16, 228); var l2 = Small("Vorname", 182, 228);
         _last.Location = new Point(16, 246); _first.Location = new Point(182, 246);
-        Controls.AddRange(new Control[] { _pic, _status, _more, _swap, _rot, _del, l1, l2, _last, _first });
+        Controls.AddRange(new Control[] { _pic, _status, _more, _crop, _swap, _rot, _del, l1, l2, _last, _first });
 
         _last.TextChanged += (_, __) => { if (!_binding) { Item.Last = _last.Text; Touched(); NameEdited?.Invoke(); } };
         _first.TextChanged += (_, __) => { if (!_binding) { Item.First = _first.Text; Touched(); NameEdited?.Invoke(); } };
@@ -39,6 +39,7 @@ sealed class CardControl : Panel
         _last.Enter += (_, __) => _last.SelectAll(); _first.Enter += (_, __) => _first.SelectAll();
         _swap.Click += (_, __) => { var t = _last.Text; _last.Text = _first.Text; _first.Text = t; };
         _rot.Click += (_, __) => RotateRequested?.Invoke(this, 1);
+        _crop.Click += (_, __) => CropRequested?.Invoke(this);
         _del.Click += (_, __) => RemoveRequested?.Invoke(this);
         _more.Click += (_, __) => ShowMenu();
         Scale(new SizeF(Theme.Factor, Theme.Factor)); Margin = new Padding(Theme.Px(10));   // Kacheln entstehen erst nach dem Start → nicht von der Fenster-Skalierung erfasst
@@ -88,6 +89,7 @@ sealed class CardControl : Panel
         }
         if (Item.Candidates.Count > 0) m.Items.Add(new ToolStripSeparator());
         m.Items.Add("90° nach links drehen", null, (_, __) => RotateRequested?.Invoke(this, 3));
+        if (Item.Scan != null) m.Items.Add("Zuschnitt anpassen …", null, (_, __) => CropRequested?.Invoke(this));
         m.Items.Add("Großansicht", null, (_, __) => PreviewRequested?.Invoke(this));
         m.Show(_more, new Point(0, _more.Height));
     }
