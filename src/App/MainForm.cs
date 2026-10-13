@@ -381,11 +381,21 @@ sealed class MainForm : Form
         m.Show(_viewScan, new Point(0, _viewScan.Height));
     }
 
-    /// <summary>Zuschnitt einer Kachel nachträglich korrigieren: Gesamtscan öffnen, Ausweis ist schon gewählt (Eckpunkte sichtbar).</summary>
+    /// <summary>Große Ansicht eines Ausweises: Rahmen direkt dort anpassen (mit Lupe). Die Kachel wird danach an derselben Stelle neu ausgeschnitten.</summary>
     async Task AdjustCrop(CardControl c)
     {
-        if (c.Item.Scan == null) return;
-        await OpenScanView(c.Item.Scan, "Eckpunkte des gewählten Ausweises ziehen (Strg = drehen), dann „Übernehmen“.", c.Item);
+        var scan = c.Item.Scan; if (scan == null || _busy) return;
+        var quad = scan.Quads.FirstOrDefault(q => q.Item == c.Item); if (quad == null) return;
+        using var f = new CropEditorForm(scan, quad.Corners, S.EdgeInsetMm);
+        if (f.ShowDialog(this) != DialogResult.OK) return;
+        int idx = _cards.IndexOf(c); var item = c.Item;
+        foreach (var q in scan.Quads) q.Include = q.Item != null;
+        quad.Corners = f.Result; quad.Dirty = true;
+        await ApplyScanChanges(scan);
+        var nc = quad.Item == null ? null : _cards.FirstOrDefault(x => x.Item == quad.Item);
+        if (nc != null && idx >= 0 && idx < _cards.Count - 1)   // an die alte Stelle der Liste zurück
+        { _cards.Remove(nc); _cards.Insert(idx, nc); _flow.Controls.SetChildIndex(nc, idx); Renumber(); }
+        nc?.FocusLast();
     }
 
     async Task OpenScanView(ScanInfo scan, string? note, CardItem? select = null)
@@ -394,11 +404,21 @@ sealed class MainForm : Form
         using var f = new ScanViewForm(scan, note, S.EdgeInsetMm, select);
         if (f.ShowDialog(this) != DialogResult.OK) { UpdateView(); return; }
         scan.Quads = f.Result;
+        await ApplyScanChanges(scan);
+    }
+
+    /// <summary>Stand der Rahmen (Include/Dirty/Removed) in die Kachelliste übernehmen.</summary>
+    async Task ApplyScanChanges(ScanInfo scan)
+    {
         foreach (var q in scan.Quads.Where(q => !q.Include && q.Item != null).ToList())
         { var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null; }
-        // Ecken verändert → alte Kachel verwerfen, neu ausschneiden und lesen
+        // Ecken verändert → alte Kachel verwerfen, neu ausschneiden und lesen; von Hand eingetippte Namen bleiben erhalten
+        var typed = new Dictionary<ScanQuad, (string last, string first)>();
         foreach (var q in scan.Quads.Where(q => q.Include && q.Item != null && q.Dirty).ToList())
-        { var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null; }
+        {
+            if (q.Item!.Source == "von Hand") typed[q] = (q.Item.Last, q.Item.First);
+            var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null;
+        }
         foreach (var q in scan.Quads) q.Dirty = false;
         scan.Quads.RemoveAll(q => q.Removed);   // gelöschte Rahmen gibt es nicht mehr (ihre Kacheln sind oben schon entfernt)
         var add = scan.Quads.Where(q => q.Include && q.Item == null).ToList();
@@ -409,7 +429,11 @@ sealed class MainForm : Form
             {
                 var profile = SelectedProfile; var ocr = _ocr; var profs = Profiles;
                 var items = await Task.Run(() => add.Select(q => Pipeline.FromCorners(scan, q.Corners, profs, profile, ocr)).ToList());
-                for (int i = 0; i < add.Count; i++) add[i].Item = items[i];
+                for (int i = 0; i < add.Count; i++)
+                {
+                    add[i].Item = items[i];
+                    if (typed.TryGetValue(add[i], out var t)) { items[i].Last = t.last; items[i].First = t.first; items[i].Source = "von Hand"; items[i].Score = string.IsNullOrWhiteSpace(t.last) ? 0 : 0.99; }
+                }
                 AddCards(items);
                 (_cards.FirstOrDefault(c => items.Contains(c.Item) && c.Item.Score < 0.7) ?? _cards.FirstOrDefault(c => items.Contains(c.Item)))?.FocusLast();
             }
@@ -429,9 +453,8 @@ sealed class MainForm : Form
             c.RemoveRequested += RemoveCard; c.CropRequested += async x => await AdjustCrop(x);
             c.PreviewRequested += async x =>
             {
-                bool adjust;
-                using (var f = new PreviewForm(x.Item.Image, "Ausweis – Großansicht (Esc schließt)", x.Item.Scan != null)) { f.ShowDialog(this); adjust = f.AdjustRequested; }
-                if (adjust) await AdjustCrop(x);   // erst nach dem Schließen der Großansicht
+                if (x.Item.Scan != null) { await AdjustCrop(x); return; }   // große Ansicht = Zuschnitt direkt dort anpassen
+                using var f = new PreviewForm(x.Item.Image, "Ausweis – Großansicht (Esc schließt)"); f.ShowDialog(this);
             };
             c.RotateRequested += async (x, t) => await RotateCard(x, t);
             c.EnterOnLast += x => { var i = _cards.IndexOf(x); if (i + 1 < _cards.Count) _cards[i + 1].FocusLast(); else _save.Focus(); };
@@ -579,6 +602,10 @@ sealed class MainForm : Form
             Snap(sv, baseName + "-scanview.png");
             sv.DemoRegion(); await Task.Delay(300); Application.DoEvents();
             Snap(sv, baseName + "-scanview-fit.png");
+            var q0 = _cards[0].Item.Scan!.Quads.First(q => q.Item == _cards[0].Item);
+            using var ce = new CropEditorForm(_cards[0].Item.Scan!, q0.Corners, S.EdgeInsetMm) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
+            ce.Show(); await Task.Delay(400); Application.DoEvents(); ce.DemoLoupe(); await Task.Delay(300); Application.DoEvents();
+            Snap(ce, baseName + "-crop.png");
         }
         using var st = new SettingsForm(this, 0) { StartPosition = FormStartPosition.Manual, Location = new Point(0, 0) };
         st.Show();

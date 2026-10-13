@@ -158,19 +158,10 @@ sealed class TextDialog : Form
 
 sealed class PreviewForm : Form
 {
-    public bool AdjustRequested { get; private set; }
-
-    public PreviewForm(Raster r, string title, bool offerAdjust = false)
+    public PreviewForm(Raster r, string title)
     {
         Icon = Theme.AppIcon; Text = title; Size = new Size(Math.Min(1100, r.Width + 40), Math.Min(760, r.Height + 80)); StartPosition = FormStartPosition.CenterParent;
         Controls.Add(new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Image = BitmapCodec.ToBitmap(r), BackColor = Color.FromArgb(40, 40, 40) });
-        if (offerAdjust)   // Zuschnitt nachträglich korrigieren (z. B. Schattenrand, abgeschnittene Ecke)
-        {
-            var bar = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = Theme.Surface };
-            var b = Theme.Outline("✂  Zuschnitt anpassen …", 220, 34); b.Location = new Point(12, 9);
-            b.Click += (_, __) => { AdjustRequested = true; Close(); };
-            bar.Controls.Add(b); Controls.Add(bar);
-        }
         KeyPreview = true; KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) Close(); };
     }
 }

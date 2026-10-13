@@ -17,14 +17,14 @@ sealed class CardControl : Panel
     readonly PictureBox _pic = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, BackColor = Color.FromArgb(243, 244, 246) };
     readonly TextBox _last = Theme.Field(150), _first = Theme.Field(150);
     readonly Label _status = new Label { AutoEllipsis = true, Font = Theme.Font(9f), BackColor = Color.Transparent };
-    readonly Button _more = Theme.Icon("⋯", "Weitere Vorschläge, Drehen"), _swap = Theme.Icon("⇄", "Nachname und Vorname tauschen"), _rot = Theme.Icon("⟳", "90° drehen"), _crop = Theme.Icon("✂", "Zuschnitt anpassen (Ecken im Gesamtscan verschieben)"), _del = Theme.Icon("✕", "Diesen Ausweis nicht speichern");
+    readonly Button _more = Theme.Icon("⋯", "Weitere Vorschläge, Drehen"), _swap = Theme.Icon("⇄", "Nachname und Vorname tauschen"), _rot = Theme.Icon("⟳", "90° drehen"), _crop = Theme.Icon("✂", "Zuschnitt anpassen"), _del = Theme.Icon("✕", "Diesen Ausweis nicht speichern");
     bool _binding, _dup; int _number; Color _stripe = Theme.Muted;
 
     public CardControl(CardItem item, int number)
     {
         Item = item; Size = new Size(350, 296); BackColor = Theme.Surface; DoubleBuffered = true;
         _pic.SetBounds(16, 10, 326, 184); _pic.Click += (_, __) => PreviewRequested?.Invoke(this);
-        new ToolTip().SetToolTip(_pic, "Klicken für Großansicht");
+        new ToolTip().SetToolTip(_pic, "Klicken: Großansicht – dort lässt sich der Zuschnitt direkt anpassen");
         _status.SetBounds(16, 200, 170, 22);
         _del.Location = new Point(316, 198); _rot.Location = new Point(290, 198); _swap.Location = new Point(264, 198); _more.Location = new Point(238, 198); _crop.Location = new Point(212, 198);
         _status.Width = 190;
