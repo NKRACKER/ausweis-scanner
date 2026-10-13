@@ -40,7 +40,28 @@ sealed class ScanCanvas : Control
     PointF ToView(PointD p) { var r = ImageRect(); return new PointF((float)(r.X + p.X / _sw * r.Width), (float)(r.Y + p.Y / _sh * r.Height)); }
     PointD ToScan(Point p) { var r = ImageRect(); return new PointD((p.X - r.X) / r.Width * _sw, (p.Y - r.Y) / r.Height * _sh); }
     bool InImage(Point p) => ImageRect().Contains(p);
-    public void SelectIndex(int i) { _sel = i; Invalidate(); }
+    public void SelectIndex(int i) { _sel = i; Invalidate(); Changed?.Invoke(); }
+    /// <summary>Ein Rahmen ist gewählt (Griffe sichtbar, löschbar).</summary>
+    public bool HasSelection => _sel >= 0 && _sel < Quads.Count && !Quads[_sel].Removed && Quads[_sel].Include;
+
+    /// <summary>Gewählten Rahmen ganz löschen. Gehört schon eine Kachel dazu, wird sie beim Übernehmen entfernt.</summary>
+    public void DeleteSelected() => DeleteQuad(_sel);
+
+    void DeleteQuad(int i)
+    {
+        if (i < 0 || i >= Quads.Count || Quads[i].Removed) return;
+        if (Quads[i].Item != null) { Quads[i].Removed = true; Quads[i].Include = false; } else Quads.RemoveAt(i);
+        _sel = -1; Changed?.Invoke(); Invalidate();
+    }
+
+    void ShowMenu(int qi, Point at)
+    {
+        var q = Quads[qi]; _sel = q.Include ? qi : -1; Invalidate(); Changed?.Invoke();
+        var m = new ContextMenuStrip { Font = Theme.Font(9.5f) };
+        m.Items.Add(q.Include ? "Herausnehmen (nicht speichern)" : "Wieder hineinnehmen", null, (_, __) => { q.Include = !q.Include; _sel = q.Include ? qi : -1; Changed?.Invoke(); Invalidate(); });
+        m.Items.Add("Rahmen löschen", null, (_, __) => DeleteQuad(qi));
+        m.Show(this, at);
+    }
     int HandleRadius => Theme.Px(9);
 
     protected override void OnPaint(PaintEventArgs e)
@@ -51,7 +72,7 @@ sealed class ScanCanvas : Control
         int n = 0;
         for (int qi = 0; qi < Quads.Count; qi++)
         {
-            var q = Quads[qi];
+            var q = Quads[qi]; if (q.Removed) continue;
             var pts = q.Corners.Select(ToView).ToArray();
             Color c = q.Include ? Color.FromArgb(34, 197, 94) : Color.FromArgb(160, 160, 160);
             if (q.Include) { n++; using var fill = new SolidBrush(Color.FromArgb(qi == _sel ? 70 : 45, c)); g.FillPolygon(fill, pts); }
@@ -64,7 +85,7 @@ sealed class ScanCanvas : Control
             using (var bb = new SolidBrush(Color.FromArgb(220, q.Include ? Color.FromArgb(22, 163, 74) : Color.FromArgb(110, 110, 110)))) g.FillRectangle(bb, bx);
             g.DrawString(label, f, Brushes.White, bx.X + 6, bx.Y + 2);
         }
-        if (_sel >= 0 && _sel < Quads.Count && Quads[_sel].Include)        // Eck-Griffe am gewählten Ausweis
+        if (HasSelection)        // Eck-Griffe am gewählten Ausweis
             foreach (var pt in Quads[_sel].Corners.Select(ToView))
             {
                 float hr = HandleRadius * 0.6f;
@@ -78,11 +99,11 @@ sealed class ScanCanvas : Control
         }
     }
 
-    int HitQuad(Point p) { var sp = ToScan(p); for (int i = Quads.Count - 1; i >= 0; i--) if (QuadTools.Contains(Quads[i].Corners, sp)) return i; return -1; }
+    int HitQuad(Point p) { var sp = ToScan(p); for (int i = Quads.Count - 1; i >= 0; i--) if (!Quads[i].Removed && QuadTools.Contains(Quads[i].Corners, sp)) return i; return -1; }
 
     int HitCorner(Point p)
     {
-        if (_sel < 0 || _sel >= Quads.Count || !Quads[_sel].Include) return -1;
+        if (!HasSelection) return -1;
         var c = Quads[_sel].Corners;
         for (int i = 0; i < 4; i++) { var v = ToView(c[i]); if (Math.Abs(v.X - p.X) <= HandleRadius && Math.Abs(v.Y - p.Y) <= HandleRadius) return i; }
         return -1;
@@ -90,6 +111,7 @@ sealed class ScanCanvas : Control
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
+        if (e.Button == MouseButtons.Right && InImage(e.Location)) { int rq = HitQuad(e.Location); if (rq >= 0) ShowMenu(rq, e.Location); return; }
         if (e.Button != MouseButtons.Left || !InImage(e.Location)) return;
         _down = _now = e.Location; _downScan = ToScan(e.Location);
         int ci = HitCorner(e.Location);
@@ -168,6 +190,7 @@ sealed class ScanViewForm : Form
     readonly ScanCanvas _canvas; readonly Label _info = new Label { AutoSize = false, Font = Theme.Font(10f), ForeColor = Theme.Text, BackColor = Color.Transparent };
     readonly Label _hint = new Label { AutoSize = false, Font = Theme.Font(9.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent };
     public List<ScanQuad> Result => _canvas.Quads;
+    readonly Button _delete = Theme.Ghost("🗑  Rahmen löschen", 170, 40);
     internal void DemoRegion() => _canvas.DemoRegion();
 
     public ScanViewForm(ScanInfo scan, string? note, double edgeInsetMm = 0.6, CardItem? select = null)
@@ -185,10 +208,13 @@ sealed class ScanViewForm : Form
         ok.DialogResult = DialogResult.OK; cancel.DialogResult = DialogResult.Cancel; AcceptButton = ok; CancelButton = cancel;
         var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 10, 16, 0), BackColor = Color.Transparent };
         btns.Controls.Add(ok); btns.Controls.Add(cancel);
-        bar.Controls.Add(btns);
+        _delete.Dock = DockStyle.Left; _delete.Margin = Padding.Empty; _delete.ForeColor = Theme.Bad; _delete.Enabled = false;
+        _delete.Click += (_, __) => _canvas.DeleteSelected();
+        bar.Controls.Add(btns); bar.Controls.Add(_delete);
         Controls.Add(_canvas); Controls.Add(top); Controls.Add(bar);
 
-        _canvas.Changed += Idle; _canvas.Hint += h => { if (h.Length > 0) _hint.Text = h; else Idle(); };
+        _canvas.Changed += () => { _delete.Enabled = _canvas.HasSelection; Idle(); };
+        KeyPreview = true; KeyDown += (_, e) => { if (e.KeyCode == Keys.Delete && _canvas.HasSelection) { _canvas.DeleteSelected(); e.Handled = true; } }; _canvas.Hint += h => { if (h.Length > 0) _hint.Text = h; else Idle(); };
         _canvas.Resize += (_, __) => _canvas.Invalidate();
         if (select != null) _canvas.SelectIndex(_canvas.Quads.FindIndex(q => q.Item == select));
         Theme.Fit(this);
@@ -199,8 +225,8 @@ sealed class ScanViewForm : Form
     void Idle(string? note) { _note = note ?? _note; Idle(); }
     void Idle()
     {
-        int n = _canvas.Quads.Count(q => q.Include);
+        int n = _canvas.Quads.Count(q => q.Include && !q.Removed);
         _info.Text = (n == 1 ? "1 Ausweis ausgewählt" : $"{n} Ausweise ausgewählt") + (string.IsNullOrEmpty(_note) ? "" : "   ·   " + _note);
-        _hint.Text = "Grün = wird übernommen; Klick auf einen Ausweis nimmt ihn heraus bzw. wieder hinein.  Nicht erkannt? Grob einen Rahmen darum ziehen – die Ecken werden automatisch gesucht.  Eckpunkte ziehen = anpassen (Strg = drehen), im Ausweis ziehen = verschieben.";
+        _hint.Text = "Grün = wird übernommen; Klick auf einen Ausweis nimmt ihn heraus bzw. wieder hinein.  Nicht erkannt? Grob einen Rahmen darum ziehen – die Ecken werden automatisch gesucht.  Eckpunkte ziehen = anpassen (Strg = drehen), im Ausweis ziehen = verschieben, Entf oder Rechtsklick = Rahmen löschen.";
     }
 }

@@ -29,6 +29,7 @@ sealed class ScanQuad
     public CardItem? Item;
     public bool Include;          // nur im Scan-Dialog: soll in die Liste
     public bool Manual;
+    public bool Removed;          // im Scan-Dialog gelöscht: wird nicht mehr angezeigt; eine zugehörige Kachel wird entfernt
     public bool Dirty;            // Ecken von Hand verändert → Karte muss neu ausgeschnitten werden
 }
 

@@ -400,6 +400,7 @@ sealed class MainForm : Form
         foreach (var q in scan.Quads.Where(q => q.Include && q.Item != null && q.Dirty).ToList())
         { var c = _cards.FirstOrDefault(x => x.Item == q.Item); if (c != null) RemoveCard(c); q.Item = null; }
         foreach (var q in scan.Quads) q.Dirty = false;
+        scan.Quads.RemoveAll(q => q.Removed);   // gelöschte Rahmen gibt es nicht mehr (ihre Kacheln sind oben schon entfernt)
         var add = scan.Quads.Where(q => q.Include && q.Item == null).ToList();
         if (add.Count > 0)
         {
