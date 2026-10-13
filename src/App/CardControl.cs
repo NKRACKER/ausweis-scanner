@@ -10,9 +10,8 @@ namespace AusweisScanner.App;
 /// <summary>Vorschau des ausgeschnittenen Ausweises: Nummer links oben, beim Überfahren der Hinweis „Zuschnitt anpassen“. Bild wird ganz gezeigt, ohne Zuschneiden.</summary>
 sealed class ThumbBox : Control
 {
-    Bitmap? _img; bool _hover; int _number;
+    Bitmap? _img; bool _hover;
     public Bitmap? Image { get => _img; set { _img?.Dispose(); _img = value; Invalidate(); } }
-    public int Number { get => _number; set { _number = value; Invalidate(); } }
 
     public ThumbBox()
     {
@@ -41,12 +40,6 @@ sealed class ThumbBox : Control
             TextRenderer.DrawText(g, "✂  Zuschnitt anpassen", Theme.Font(9.5f, true), new Rectangle(0, Height - bh, Width, bh), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
         g.ResetClip();
-        if (_number > 0)
-        {
-            int d = Theme.Px(26), m = Theme.Px(8);
-            using (var b = new SolidBrush(Color.FromArgb(235, Theme.Accent))) g.FillEllipse(b, m, m, d, d);
-            TextRenderer.DrawText(g, _number.ToString(), Theme.Font(9.5f, true), new Rectangle(m, m, d, d), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        }
         using (var p = new Pen(Theme.Line)) g.DrawPath(p, clip);
     }
 
@@ -63,7 +56,7 @@ sealed class CardControl : Panel
 
     readonly ThumbBox _pic = new ThumbBox();
     readonly TextBox _last = Theme.Field(148), _first = Theme.Field(148);
-    readonly Chip _chip = new Chip();
+    readonly Chip _chip = new Chip(), _num = new Chip();
     readonly Button _more = Theme.Icon("⋯", "Weitere Namensvorschläge, drehen, Zuschnitt"), _swap = Theme.Icon("⇄", "Nachname und Vorname tauschen"), _rot = Theme.Icon("⟳", "90° drehen"), _del = Theme.Icon("✕", "Diesen Ausweis nicht speichern");
     bool _binding, _dup; Color _border = Theme.Line; float _borderW = 1f; readonly ToolTip _tip = new ToolTip { InitialDelay = 300 };
 
@@ -73,11 +66,11 @@ sealed class CardControl : Panel
         SetStyle(ControlStyles.SupportsTransparentBackColor, true); BackColor = Color.Transparent;   // gerundete Fläche selbst zeichnen
         _pic.SetBounds(14, 14, 312, 197); _pic.Click += (_, __) => PreviewRequested?.Invoke(this);
         _tip.SetToolTip(_pic, "Klicken: Großansicht – dort lässt sich der Zuschnitt direkt anpassen");
-        _chip.Location = new Point(14, 222);
+        _num.Location = new Point(14, 222); _chip.Location = new Point(54, 222);
         _swap.Location = new Point(208, 219); _rot.Location = new Point(238, 219); _more.Location = new Point(268, 219); _del.Location = new Point(298, 219);
         var l1 = Small("Nachname", 14, 256); var l2 = Small("Vorname", 178, 256);
         _last.Location = new Point(14, 274); _first.Location = new Point(178, 274);
-        Controls.AddRange(new Control[] { _pic, _chip, _swap, _rot, _more, _del, l1, l2, _last, _first });
+        Controls.AddRange(new Control[] { _pic, _num, _chip, _swap, _rot, _more, _del, l1, l2, _last, _first });
 
         _last.TextChanged += (_, __) => { if (!_binding) { Item.Last = _last.Text; Touched(); NameEdited?.Invoke(); } };
         _first.TextChanged += (_, __) => { if (!_binding) { Item.First = _first.Text; Touched(); NameEdited?.Invoke(); } };
@@ -89,7 +82,7 @@ sealed class CardControl : Panel
         _del.Click += (_, __) => RemoveRequested?.Invoke(this);
         _more.Click += (_, __) => ShowMenu();
         Scale(new SizeF(Theme.Factor, Theme.Factor)); Margin = new Padding(Theme.Px(8));   // Kacheln entstehen erst nach dem Start → nicht von der Fenster-Skalierung erfasst
-        _pic.Number = number; RefreshFromItem(number);
+        RefreshFromItem(number);
     }
 
     static Label Small(string t, int x, int y) => new Label { Text = t, AutoSize = true, Left = x, Top = y, Font = Theme.Font(8.5f), ForeColor = Theme.Muted, BackColor = Color.Transparent, UseMnemonic = false };
@@ -105,14 +98,14 @@ sealed class CardControl : Panel
 
     public void RefreshFromItem(int? number = null)
     {
-        if (number.HasValue) _pic.Number = number.Value;
+        if (number.HasValue) SetNumber(number.Value);
         _binding = true; _last.Text = Item.Last; _first.Text = Item.First; _binding = false;
         _pic.Image = BitmapCodec.Thumbnail(Item.Image, Math.Max(1, _pic.Width), Math.Max(1, _pic.Height));
         UpdateStatus();
     }
 
     void Touched() { Item.Source = "von Hand"; Item.Score = string.IsNullOrWhiteSpace(Item.Last) ? 0 : 0.99; UpdateStatus(); }
-    public void SetNumber(int n) { _pic.Number = n; }
+    public void SetNumber(int n) { _num.Set("#" + n, Theme.Accent, Theme.AccentSoft); _chip.Left = _num.Right + Theme.Px(6); }
     public void MarkDuplicate(bool dup) { _dup = dup; UpdateStatus(); }
 
     void UpdateStatus()
