@@ -186,4 +186,23 @@ public class CardDetectorTests
         double px = 200 / 25.4;
         Assert.InRange(res.Cards[0].WidthPx / px, 104.0, 106.0); Assert.InRange(res.Cards[0].HeightPx / px, 73.0, 75.0);
     }
+
+    [Fact]
+    public void DustSpecksJustBelowTheCard_DoNotEnlargeTheFrame()
+    {
+        // Regression: Staubkörnchen 3–6 mm unter der Kante wurden beim Schließen der Maske über dünne Brücken an die Karte gehängt → Rahmen 3–4 mm zu hoch
+        int dpi = 175; double angle = 11, px = dpi / 25.4;
+        var scan = Make(new[] { new Card { CxMm = 100, CyMm = 120, AngleDeg = angle } }, lid: 240, dpi: dpi);
+        double a = angle * Math.PI / 180, cs = Math.Cos(a), sn = Math.Sin(a);
+        foreach (var (u, v) in new[] { (-30.0, 30.2), (-8.0, 31.5), (14.0, 30.6), (33.0, 32.0), (3.0, 33.3) })
+            for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++)
+            {
+                int x = (int)((100 + u * cs - v * sn) * px) + dx, y = (int)((120 + u * sn + v * cs) * px) + dy;
+                scan.Set(x, y, 60, 60, 60);
+            }
+        var res = CardDetector.Detect(scan, new DetectorOptions { Dpi = dpi, EdgeInsetMm = 0 });
+        Assert.Single(res.Cards);
+        Assert.InRange(res.Cards[0].HeightPx / px, 53.0, 55.0);   // vorher ≈ 57–58 mm
+        Assert.InRange(res.Cards[0].WidthPx / px, 84.5, 86.8);
+    }
 }

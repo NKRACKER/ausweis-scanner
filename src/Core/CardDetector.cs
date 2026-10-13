@@ -33,7 +33,7 @@ public sealed class DetectorOptions
     /// Bekannte Kartengröße (mm, 0 = unbekannt): passt die erkannte Karte dazu (±<see cref="SnapTolMm"/>), wird der Rahmen exakt auf diese Größe eingerastet –
     /// die Lage ergibt sich aus den sicher gefundenen Kanten. Karten anderer Größe werden normal erkannt (anders als <see cref="ExpectedWidthMm"/> filtert das nicht).
     /// </summary>
-    public double SnapWidthMm = 0, SnapHeightMm = 0, SnapTolMm = 2.2;
+    public double SnapWidthMm = 0, SnapHeightMm = 0, SnapTolMm = 3.0;
 }
 
 public sealed class DetectedCard
@@ -279,6 +279,9 @@ public static class CardDetector
     }
 
     /// <param name="model">Hintergrundmodell; null = aus dem Rand von <paramref name="img"/> bestimmen (bei Ausschnitten das des ganzen Scans übergeben).</param>
+    /// <summary>Radius (mm) des Öffnens der Maske: Brücken/Staub schmaler als das Doppelte fallen weg.</summary>
+    public static double OpenMm = 0.8;
+
     static bool[] BuildMask(Raster img, double pxPerMm, double closeMm, double bandMm, double[]? model = null)
     {
         int w = img.Width, h = img.Height;
@@ -300,7 +303,10 @@ public static class CardDetector
         int rad = Math.Max(1, (int)Math.Round(closeMm * pxPerMm));
         mask = Erode(Dilate(mask, w, h, rad), w, h, rad);   // Lücken in der Kontur schließen
         FillHoles(mask, w, h);
-        mask = Dilate(Erode(mask, w, h, 1), w, h, 1);        // dünne Linien (Scanrand, Kratzer) entfernen
+        // Öffnen: dünne Linien (Scanrand, Kratzer) und – wichtig – Staubkörnchen, die das Schließen über schmale Brücken an die Karte „gehängt“ hat, entfernen;
+        // sonst vergrößern sie die Hülle und damit den Rahmen (z. B. 3–4 mm zu viel an einer Kante). Die Karte selbst ist dick genug und bleibt.
+        int open = Math.Max(1, (int)Math.Round(OpenMm * pxPerMm));
+        mask = Dilate(Erode(mask, w, h, open), w, h, open);
         return mask;
     }
 
