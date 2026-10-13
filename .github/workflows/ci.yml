@@ -162,6 +162,19 @@ jobs:
           $hit = @($expected | Where-Object { $got -contains $_ }).Count
           "erwartet: $($expected -join ', ')"; "erhalten: $($got -join ', ')"
           "TREFFER: $hit von $($expected.Count)"
+      - name: Sehr schwieriger Testscan (stärker unscharf, JPEG 38, Rauschen, Glanzstreifen) – Trefferquote der Namen
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $dir = "e2e-harder"; New-Item -ItemType Directory -Force $dir | Out-Null
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--make-testscan',"$dir\scan",'--harder'
+          Start-Process -Wait -FilePath ".\Ausweis-Scanner-x64.exe" -ArgumentList '--process',"$dir\scan\scan.png",'--out',"$dir\out",'--format','jpg','--report',"$dir\report.json",'--profiles',"$dir\none"
+          Get-Content "$dir\report.json" -Encoding UTF8
+          $expected = (Get-Content "$dir\scan\expected.txt" -Encoding UTF8 | Where-Object { $_ }) | Sort-Object
+          $got = @(Get-ChildItem "$dir\out" -Filter *.jpg -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName })
+          $hit = @($expected | Where-Object { $got -contains $_ }).Count
+          "erwartet: $($expected -join ', ')"; "erhalten: $($got -join ', ')"
+          "TREFFER: $hit von $($expected.Count)"
       - uses: actions/upload-artifact@v6
         if: always()
         with:

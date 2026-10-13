@@ -18,7 +18,7 @@ static class TestScan
 {
     sealed class Person { public string Last = "", First = ""; public int Design; public double Angle; }
 
-    public static void Make(string dir, bool darkLid, bool umlauts, int seed, bool hard = false)
+    public static void Make(string dir, bool darkLid, bool umlauts, int seed, bool hard = false, bool harder = false)
     {
         Directory.CreateDirectory(dir);
         var rnd = new Random(seed);
@@ -31,6 +31,7 @@ static class TestScan
             new Person { Last = "Fischer", First = "Anna", Design = 1, Angle = 92 },       // quer aufgelegt
             new Person { Last = "Wagner", First = "Paul", Design = 2, Angle = 8 },
         };
+        if (harder) hard = true;
         if (hard)   // mehr Karten, ein Layout wie bei echten Schulausweisen (Beschriftungszeilen) und unterschiedliche Winkel
         {
             people.Clear();
@@ -74,17 +75,32 @@ static class TestScan
             }
         }
         finally { bed.UnlockBits(bd); }
+        if (harder)   // Folienglanz: halbtransparente helle Diagonalstreifen quer über jede Karte (teils über dem Namen)
+        {
+            using var gg = Graphics.FromImage(bed); gg.SmoothingMode = SmoothingMode.AntiAlias;
+            double[] cxs = { 52, 158 }, cys = { 50, 148, 246 };
+            for (int i = 0; i < people.Count; i++)
+            {
+                float px = (float)(cxs[i % 2] / 25.4 * dpi), py = (float)(cys[i / 2] / 25.4 * dpi);
+                var st = gg.Save(); gg.TranslateTransform(px, py); gg.RotateTransform((float)people[i].Angle);
+                using var br = new LinearGradientBrush(new Rectangle(-300, -120, 600, 240), Color.FromArgb(0, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 20f);
+                br.InterpolationColors = new ColorBlend { Colors = new[] { Color.FromArgb(0, 255, 255, 255), Color.FromArgb(150, 255, 255, 250), Color.FromArgb(0, 255, 255, 255) }, Positions = new[] { 0f, 0.5f, 1f } };
+                gg.FillRectangle(br, -300 + (i % 3) * 90 - 60, -120, 600, 240);
+                gg.Restore(st);
+            }
+        }
         bed.SetResolution(dpi, dpi);
-        if (hard) { using var degraded = Degrade(bed, rnd); degraded.SetResolution(dpi, dpi); degraded.Save(Path.Combine(dir, "scan.png"), ImageFormat.Png); }
+        if (hard) { using var degraded = Degrade(bed, rnd, harder); degraded.SetResolution(dpi, dpi); degraded.Save(Path.Combine(dir, "scan.png"), ImageFormat.Png); }
         else bed.Save(Path.Combine(dir, "scan.png"), ImageFormat.Png);
         File.WriteAllText(Path.Combine(dir, "expected.txt"), string.Join("\n", people.Select(p => p.Last + "_" + p.First)) + "\n", new UTF8Encoding(false));
     }
 
     /// <summary>Wie ein mittelmäßiger Scan: leicht unscharf (wie aus 160 dpi hochgerechnet), Rauschen, Schattierung zum Rand, JPEG-Artefakte, flaue Weißwerte.</summary>
-    static Bitmap Degrade(Bitmap src, Random rnd)
+    static Bitmap Degrade(Bitmap src, Random rnd, bool harder = false)
     {
         int W = src.Width, H = src.Height;
-        using var small = new Bitmap((int)(W * 0.52), (int)(H * 0.52), PixelFormat.Format24bppRgb);
+        double q = harder ? 0.36 : 0.52; int noise = harder ? 15 : 9; long jpg = harder ? 38L : 58L;
+        using var small = new Bitmap((int)(W * q), (int)(H * q), PixelFormat.Format24bppRgb);
         using (var g = Graphics.FromImage(small)) { g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(src, 0, 0, small.Width, small.Height); }
         var blur = new Bitmap(W, H, PixelFormat.Format24bppRgb);
         using (var g = Graphics.FromImage(blur)) { g.InterpolationMode = InterpolationMode.Bilinear; g.DrawImage(small, 0, 0, W, H); }
@@ -100,7 +116,7 @@ static class TestScan
                     double dx = (x - W / 2.0) / (W / 2.0), dy = (y - H / 2.0) / (H / 2.0), shade = 1.0 - 0.10 * (dx * dx + dy * dy) * 0.5;   // Randabschattung
                     for (int c = 0; c < 3; c++)
                     {
-                        double v = row[x * 3 + c] * shade * 0.94 + 8 + rnd.Next(-9, 10);                                                   // flaue Weißwerte + Rauschen
+                        double v = row[x * 3 + c] * shade * 0.94 + 8 + rnd.Next(-noise, noise + 1);                                                   // flaue Weißwerte + Rauschen
                         row[x * 3 + c] = (byte)Math.Max(0, Math.Min(255, v));
                     }
                 }
@@ -109,7 +125,7 @@ static class TestScan
         }
         finally { blur.UnlockBits(bd); }
         var codec = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
-        using var ep = new EncoderParameters(1); ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 58L);
+        using var ep = new EncoderParameters(1); ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, jpg);
         using var ms = new MemoryStream(); blur.Save(ms, codec, ep); blur.Dispose();
         ms.Position = 0; using var tmp = new Bitmap(ms);
         return new Bitmap(tmp);   // vom Stream lösen
