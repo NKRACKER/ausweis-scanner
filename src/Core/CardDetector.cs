@@ -27,6 +27,8 @@ public sealed class DetectorOptions
     public double[] CloseMm = { 2.0, 1.2, 0.6 };
     /// <summary>Randstreifen des Scans (mm), der ignoriert wird: Scanrand, Schatten und Rahmen am Bildrand würden sonst alles zu einem Objekt verbinden.</summary>
     public double BorderBandMm = 1.0;
+    /// <summary>Kanten in voller Auflösung nachbessern (robuste Geradenanpassung, kleine Winkelkorrektur).</summary>
+    public bool RefineEdges = true;
 }
 
 public sealed class DetectedCard
@@ -57,15 +59,16 @@ public static class CardDetector
     {
         opt ??= new DetectorOptions();
         DetectionResult? best = null;
+        byte[]? fullGray = opt.RefineEdges ? scan.ToGray() : null;
         foreach (var cl in opt.CloseMm.Length > 0 ? opt.CloseMm : new[] { 0.6 })
         {
-            var r = DetectWith(scan, opt, cl);
+            var r = DetectWith(scan, opt, cl, fullGray);
             if (best == null || r.Cards.Count > best.Cards.Count) best = r;
         }
         return best!;
     }
 
-    static DetectionResult DetectWith(Raster scan, DetectorOptions opt, double closeMm)
+    static DetectionResult DetectWith(Raster scan, DetectorOptions opt, double closeMm, byte[]? fullGray)
     {
         var res = new DetectionResult();
         double scale = Math.Min(1.0, (double)opt.WorkMaxSide / Math.Max(scan.Width, scan.Height));
@@ -120,20 +123,21 @@ public static class CardDetector
             }
 
             TrimShadow(gray, w, h, bgGray, ref center, longAxis, shortAxis, ref longLen, ref shortLen, pxPerMm);
-            double insetPx = opt.EdgeInsetMm * pxPerMm;
-            double L = longLen - 2 * insetPx, S = shortLen - 2 * insetPx;
+            // in volle Auflösung wechseln und die Kanten dort verfeinern
+            var cF = Up(center, scale); double LF = longLen / scale, SF = shortLen / scale, ppmF = opt.Dpi / 25.4;
+            var laF = longAxis; var saF = shortAxis;
+            if (fullGray != null) EdgeRefiner.Refine(fullGray, scan.Width, scan.Height, ref cF, ref laF, ref saF, ref LF, ref SF, ppmF);
+            double insetF = opt.EdgeInsetMm * ppmF, L = LF - 2 * insetF, S = SF - 2 * insetF;
             var card = new DetectedCard
             {
                 Corners = new[]
                 {
-                    Up(center - longAxis * (L / 2) - shortAxis * (S / 2), scale),
-                    Up(center + longAxis * (L / 2) - shortAxis * (S / 2), scale),
-                    Up(center + longAxis * (L / 2) + shortAxis * (S / 2), scale),
-                    Up(center - longAxis * (L / 2) + shortAxis * (S / 2), scale),
+                    cF - laF * (L / 2) - saF * (S / 2), cF + laF * (L / 2) - saF * (S / 2),
+                    cF + laF * (L / 2) + saF * (S / 2), cF - laF * (L / 2) + saF * (S / 2),
                 },
-                WidthPx = L / scale, HeightPx = S / scale,
+                WidthPx = L, HeightPx = S,
                 WidthMm = Lmm, HeightMm = Smm,
-                AngleDeg = Math.Atan2(longAxis.Y, longAxis.X) * 180 / Math.PI,
+                AngleDeg = Math.Atan2(laF.Y, laF.X) * 180 / Math.PI,
                 Rectangularity = rect,
                 TouchesEdge = c.MinX <= bandPx + 2 || c.MinY <= bandPx + 2 || c.MaxX >= w - bandPx - 3 || c.MaxY >= h - bandPx - 3,
             };
@@ -157,6 +161,7 @@ public static class CardDetector
         scale = (double)w / scan.Width;
         var small = scan.Resize(w, h);
         double pxPerMm = opt.Dpi / 25.4 * scale;
+        byte[]? fullGrayFit = null;
         var model = MakeModel(small, Gradient(small));          // Hintergrund immer aus dem ganzen Scan (im Ausschnitt läge der Rand auf der Karte)
 
         int pad = (int)Math.Round(10 * pxPerMm);
@@ -188,17 +193,20 @@ public static class CardDetector
             if (longAxis.X < -1e-9 || (Math.Abs(longAxis.X) <= 1e-9 && longAxis.Y < 0)) longAxis = longAxis * -1;
             var shortAxis = new PointD(-longAxis.Y, longAxis.X);
             TrimShadow(subGray, sub.Width, sub.Height, bgGray, ref center, longAxis, shortAxis, ref longLen, ref shortLen, pxPerMm);
-            double insetPx = opt.EdgeInsetMm * pxPerMm, L = longLen - 2 * insetPx, S = shortLen - 2 * insetPx;
             PointD Back(PointD p) => new PointD((p.X + x0) / scale, (p.Y + y0) / scale);
+            var cF = Back(center); double LF = longLen / scale, SF = shortLen / scale, ppmF = opt.Dpi / 25.4;
+            var laF = longAxis; var saF = shortAxis;
+            if (opt.RefineEdges) EdgeRefiner.Refine(fullGrayFit ??= scan.ToGray(), scan.Width, scan.Height, ref cF, ref laF, ref saF, ref LF, ref SF, ppmF);
+            double insetF = opt.EdgeInsetMm * ppmF, L = LF - 2 * insetF, S = SF - 2 * insetF;
             return new DetectedCard
             {
                 Corners = new[]
                 {
-                    Back(center - longAxis * (L / 2) - shortAxis * (S / 2)), Back(center + longAxis * (L / 2) - shortAxis * (S / 2)),
-                    Back(center + longAxis * (L / 2) + shortAxis * (S / 2)), Back(center - longAxis * (L / 2) + shortAxis * (S / 2)),
+                    cF - laF * (L / 2) - saF * (S / 2), cF + laF * (L / 2) - saF * (S / 2),
+                    cF + laF * (L / 2) + saF * (S / 2), cF - laF * (L / 2) + saF * (S / 2),
                 },
-                WidthPx = L / scale, HeightPx = S / scale, WidthMm = Lmm, HeightMm = Smm,
-                AngleDeg = Math.Atan2(longAxis.Y, longAxis.X) * 180 / Math.PI, Rectangularity = PolyArea(bestHull) / Math.Max(1.0, longLen * shortLen), Confidence = 1,
+                WidthPx = L, HeightPx = S, WidthMm = Lmm, HeightMm = Smm,
+                AngleDeg = Math.Atan2(laF.Y, laF.X) * 180 / Math.PI, Rectangularity = PolyArea(bestHull) / Math.Max(1.0, longLen * shortLen), Confidence = 1,
             };
         }
         return null;

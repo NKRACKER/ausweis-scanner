@@ -146,4 +146,19 @@ public class CardDetectorTests
         double hMm = res.Cards[0].HeightPx / px;
         Assert.InRange(hMm, 51.5, 54.0);   // 54 mm Karte − 2×0,6 mm Randabzug = 52,8; mit Schatten wären es ≈ 55
     }
+
+    [Theory]
+    [InlineData(20, 300, 0)]      // dunkler Deckel, volle Auflösung
+    [InlineData(20, 300, 17)]     // schräg
+    [InlineData(235, 300, 8)]     // heller Deckel
+    [InlineData(235, 150, -23)]   // heller Deckel, niedrige Auflösung
+    public void EdgeRefinement_HitsCardSizeWithinHalfMm(int lid, int dpi, double angle)
+    {
+        var scan = Make(new[] { new Card { CxMm = 100, CyMm = 120, AngleDeg = angle } }, lid: (byte)lid, dpi: dpi);
+        var res = CardDetector.Detect(scan, new DetectorOptions { Dpi = dpi, EdgeInsetMm = 0 });
+        Assert.Single(res.Cards);
+        double px = dpi / 25.4, w = res.Cards[0].WidthPx / px, h = res.Cards[0].HeightPx / px;
+        Assert.InRange(w, 85.6 - 0.6, 85.6 + 0.6); Assert.InRange(h, 54.0 - 0.6, 54.0 + 0.6);
+        Assert.InRange(Math.Abs(((res.Cards[0].AngleDeg - angle + 540) % 360) - 180), 0, 0.8);   // Winkel auf <1° genau
+    }
 }

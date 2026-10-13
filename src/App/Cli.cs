@@ -15,7 +15,7 @@ static class Cli
         Bild/PDF(s) verarbeiten: Ausweise erkennen, Namen lesen, je Karte eine Datei speichern.
   --diag [<Datei>]            Technischen Zustandsbericht (Scanner, Texterkennung) ausgeben/speichern
   --selftest [--report <Datei>]   Schnelltest: Start ok, Texterkennung verfügbar?
-  --make-testscan <Ordner> [--dark] [--umlauts] [--seed N]   synthetischen Beispiel-Scan mit Fantasie-Ausweisen erzeugen
+  --make-testscan <Ordner> [--dark] [--umlauts] [--hard] [--seed N]   synthetischen Beispiel-Scan mit Fantasie-Ausweisen erzeugen
   --update-check [--force] [--report <Datei>]   Update-Prüfung (--force: so tun, als wäre eine alte Version installiert)
   --update-download-test [--report <Datei>]      neuestes Release laden und Prüfsumme kontrollieren (ohne zu installieren)
   --update-selftest <Ordner>                     Austausch der eigenen .exe + Neustart in einer Kopie durchspielen (CI)";
@@ -30,7 +30,7 @@ static class Cli
             {
                 case "--help": case "--hilfe": Out(Help); return 0;
                 case "--make-testscan":
-                    TestScan.Make(Opt("--make-testscan", "testscan"), Has("--dark"), Has("--umlauts"), int.TryParse(Opt("--seed", "1"), out var sd) ? sd : 1);
+                    TestScan.Make(Opt("--make-testscan", "testscan"), Has("--dark"), Has("--umlauts"), int.TryParse(Opt("--seed", "1"), out var sd) ? sd : 1, Has("--hard"));
                     return 0;
                 case "--diag":
                 {

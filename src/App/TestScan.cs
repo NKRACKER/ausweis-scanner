@@ -18,7 +18,7 @@ static class TestScan
 {
     sealed class Person { public string Last = "", First = ""; public int Design; public double Angle; }
 
-    public static void Make(string dir, bool darkLid, bool umlauts, int seed)
+    public static void Make(string dir, bool darkLid, bool umlauts, int seed, bool hard = false)
     {
         Directory.CreateDirectory(dir);
         var rnd = new Random(seed);
@@ -31,6 +31,17 @@ static class TestScan
             new Person { Last = "Fischer", First = "Anna", Design = 1, Angle = 92 },       // quer aufgelegt
             new Person { Last = "Wagner", First = "Paul", Design = 2, Angle = 8 },
         };
+        if (hard)   // mehr Karten, ein Layout wie bei echten Schulausweisen (Beschriftungszeilen) und unterschiedliche Winkel
+        {
+            people.Clear();
+            people.AddRange(new[]
+            {
+                new Person { Last = "Eickmann", First = "Mieke Kathrin", Design = 3, Angle = 11 }, new Person { Last = "Hoffmann", First = "Jonas", Design = 3, Angle = 181 },
+                new Person { Last = "Schneider", First = "Lara", Design = 3, Angle = 172 },       new Person { Last = "Brandt", First = "Felix Noah", Design = 3, Angle = -24 },
+                new Person { Last = "Lindner", First = "Mia", Design = 0, Angle = 7 },            new Person { Last = "Krause", First = "Emil", Design = 1, Angle = 186 },
+                new Person { Last = "Neumann", First = "Sophie", Design = 2, Angle = -9 },        new Person { Last = "Vogel", First = "Ben", Design = 3, Angle = 36 },
+            });
+        }
         if (umlauts) { people[0].Last = "Müller"; people[0].First = "Jörg"; people[5].Last = "Köhler"; people[5].First = "Bärbel"; }
 
         const int dpi = 300; int W = (int)(210 / 25.4 * dpi), H = (int)(297 / 25.4 * dpi);
@@ -39,7 +50,7 @@ static class TestScan
         {
             g.Clear(darkLid ? Color.FromArgb(28, 28, 30) : Color.FromArgb(238, 238, 236));
             g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            double[] cx = { 52, 158 }, cy = { 50, 148, 246 };   // ≥ 14 mm Abstand auch bei gedrehten Karten
+            double[] cx = { 52, 158 }, cy = hard ? new double[] { 38, 106, 174, 242 } : new double[] { 50, 148, 246 };   // ≥ 14 mm Abstand auch bei gedrehten Karten
             for (int i = 0; i < people.Count; i++)
             {
                 using var card = RenderCard(people[i], dpi);
@@ -65,8 +76,44 @@ static class TestScan
         }
         finally { bed.UnlockBits(bd); }
         bed.SetResolution(dpi, dpi);
-        bed.Save(Path.Combine(dir, "scan.png"), ImageFormat.Png);
+        if (hard) { using var degraded = Degrade(bed, rnd); degraded.SetResolution(dpi, dpi); degraded.Save(Path.Combine(dir, "scan.png"), ImageFormat.Png); }
+        else bed.Save(Path.Combine(dir, "scan.png"), ImageFormat.Png);
         File.WriteAllText(Path.Combine(dir, "expected.txt"), string.Join("\n", people.Select(p => p.Last + "_" + p.First)) + "\n", new UTF8Encoding(false));
+    }
+
+    /// <summary>Wie ein mittelmäßiger Scan: leicht unscharf (wie aus 160 dpi hochgerechnet), Rauschen, Schattierung zum Rand, JPEG-Artefakte, flaue Weißwerte.</summary>
+    static Bitmap Degrade(Bitmap src, Random rnd)
+    {
+        int W = src.Width, H = src.Height;
+        using var small = new Bitmap((int)(W * 0.52), (int)(H * 0.52), PixelFormat.Format24bppRgb);
+        using (var g = Graphics.FromImage(small)) { g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(src, 0, 0, small.Width, small.Height); }
+        var blur = new Bitmap(W, H, PixelFormat.Format24bppRgb);
+        using (var g = Graphics.FromImage(blur)) { g.InterpolationMode = InterpolationMode.Bilinear; g.DrawImage(small, 0, 0, W, H); }
+        var bd = blur.LockBits(new Rectangle(0, 0, W, H), ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
+        try
+        {
+            var row = new byte[Math.Abs(bd.Stride)];
+            for (int y = 0; y < H; y++)
+            {
+                System.Runtime.InteropServices.Marshal.Copy(bd.Scan0 + y * bd.Stride, row, 0, W * 3);
+                for (int x = 0; x < W; x++)
+                {
+                    double dx = (x - W / 2.0) / (W / 2.0), dy = (y - H / 2.0) / (H / 2.0), shade = 1.0 - 0.10 * (dx * dx + dy * dy) * 0.5;   // Randabschattung
+                    for (int c = 0; c < 3; c++)
+                    {
+                        double v = row[x * 3 + c] * shade * 0.94 + 8 + rnd.Next(-9, 10);                                                   // flaue Weißwerte + Rauschen
+                        row[x * 3 + c] = (byte)Math.Max(0, Math.Min(255, v));
+                    }
+                }
+                System.Runtime.InteropServices.Marshal.Copy(row, 0, bd.Scan0 + y * bd.Stride, W * 3);
+            }
+        }
+        finally { blur.UnlockBits(bd); }
+        var codec = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+        using var ep = new EncoderParameters(1); ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 58L);
+        using var ms = new MemoryStream(); blur.Save(ms, codec, ep); blur.Dispose();
+        ms.Position = 0; using var tmp = new Bitmap(ms);
+        return new Bitmap(tmp);   // vom Stream lösen
     }
 
     static Bitmap RenderCard(Person p, int dpi)
@@ -97,6 +144,16 @@ static class TestScan
                 g.DrawString("Nachname", F(26), grey, 330, 150); g.DrawString(p.Last.ToUpperInvariant(), F(60, true), ink, 326, 180);
                 g.DrawString("Vorname", F(26), grey, 330, 290); g.DrawString(p.First, F(56), ink, 326, 320);
                 g.DrawString("Geb.: 01.02.2012", F(30), grey, 330, 450);
+                break;
+            case 3:   // wie ein Schulausweis mit Beschriftungszeilen: Titel, Adresse, „Name:/Vorname:/Geburtsdatum:“, rote Linie, Foto rechts
+                g.DrawString("SCHÜLERAUSWEIS", F(54, true), ink, 24, 18); g.DrawString("Student ID / Carte d' Identité Scolaire", F(28, true), ink, 24, 80); g.DrawString("Gültig bis: 31.12.2026", F(30, true), ink, 24, 116);
+                using (var red = new SolidBrush(Color.FromArgb(190, 50, 50))) g.FillRectangle(red, 0, 168, w, 8);
+                g.DrawString("Beispiel-Schule", F(34), ink, 24, 196); g.DrawString("Im Musterhof 2", F(34), ink, 24, 238); g.DrawString("12345 Musterstadt", F(34), ink, 24, 280);
+                g.DrawString("Name:", F(34), ink, 24, 340); g.DrawString(p.Last, F(38, true), ink, 190, 338);
+                g.DrawString("Vorname:", F(34), ink, 24, 392); g.DrawString(p.First, F(38, true), ink, 190, 390);
+                g.DrawString("Geburtsdatum:", F(34), ink, 24, 444); g.DrawString("19.03.2009", F(38, true), ink, 270, 442);
+                using (var b = new SolidBrush(Color.FromArgb(170, 175, 190))) g.FillRectangle(b, 560, 200, 190, 250);
+                using (var d = new SolidBrush(Color.FromArgb(110, 115, 130))) { g.FillEllipse(d, 600, 230, 110, 120); g.FillEllipse(d, 575, 360, 160, 140); }
                 break;
             default:
                 g.FillRectangle(blue, 0, 0, 40, h); g.DrawString("REALSCHULE AM PARK", F(38, true), blue, 80, 40);
