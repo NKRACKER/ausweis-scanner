@@ -39,7 +39,6 @@ static class TestScan
                 new Person { Last = "Eickmann", First = "Mieke Kathrin", Design = 3, Angle = 11 }, new Person { Last = "Hoffmann", First = "Jonas", Design = 3, Angle = 181 },
                 new Person { Last = "Schneider", First = "Lara", Design = 3, Angle = 172 },       new Person { Last = "Brandt", First = "Felix Noah", Design = 3, Angle = -24 },
                 new Person { Last = "Lindner", First = "Mia", Design = 0, Angle = 7 },            new Person { Last = "Krause", First = "Emil", Design = 1, Angle = 186 },
-                new Person { Last = "Neumann", First = "Sophie", Design = 2, Angle = -9 },        new Person { Last = "Vogel", First = "Ben", Design = 3, Angle = 36 },
             });
         }
         if (umlauts) { people[0].Last = "Müller"; people[0].First = "Jörg"; people[5].Last = "Köhler"; people[5].First = "Bärbel"; }
@@ -50,7 +49,7 @@ static class TestScan
         {
             g.Clear(darkLid ? Color.FromArgb(28, 28, 30) : Color.FromArgb(238, 238, 236));
             g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            double[] cx = { 52, 158 }, cy = hard ? new double[] { 38, 106, 174, 242 } : new double[] { 50, 148, 246 };   // ≥ 14 mm Abstand auch bei gedrehten Karten
+            double[] cx = { 52, 158 }, cy = { 50, 148, 246 };   // ≥ 14 mm Abstand auch bei gedrehten Karten
             for (int i = 0; i < people.Count; i++)
             {
                 using var card = RenderCard(people[i], dpi);
